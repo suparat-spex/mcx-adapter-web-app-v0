@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Users &amp; roles{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Users &amp; roles</div>
+<div class="head"><div><h1>Users &amp; roles</h1><p>Local accounts on this server · every change is in the audit log</p></div></div>
+<section class="panel"><div class="ph"><span class="muted">Users</span><span class="note">{{ users|length }} accounts</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>User</th><th>Name</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Reset password</th><th></th></tr></thead><tbody>
+{% for u in users %}<tr class="{{ 'dim' if not u.active }}"><td><b>{{ u.username }}</b>{{ ' (you)' if u.id == user.id }}</td><td>{{ u.name }}</td>
+<td><form method="post" action="/users/{{ u.id }}" class="inline">{{ csrf_field() }}<input type="hidden" name="action" value="role"><label class="sr" for="role-{{ u.id }}">Role of {{ u.username }}</label>
+<select id="role-{{ u.id }}" name="role" data-autosubmit>{% for r in roles|reverse %}<option value="{{ r }}" {{ 'selected' if r == u.role }}>{{ ROLE_TEXT[r] }}</option>{% endfor %}</select></form></td>
+<td class="{{ 'ok' if u.active else 'muted' }}">{{ 'active' if u.active else 'disabled' }}</td><td class="muted">{{ u.last_login or 'never' }}</td>
+<td><form method="post" action="/users/{{ u.id }}" class="row" style="flex-wrap:nowrap">{{ csrf_field() }}<input type="hidden" name="action" value="password"><label class="sr" for="pw-{{ u.id }}">New password for {{ u.username }}</label><input id="pw-{{ u.id }}" type="password" name="password" autocomplete="new-password" placeholder="new password" size="14" required><button class="btn sm">Set</button></form></td>
+<td class="row" style="flex-wrap:nowrap">{% if u.id != user.id %}{{ post_button("/users/" ~ u.id, "Disable" if u.active else "Enable", "btn sm", None, None, {"action": "disable" if u.active else "enable"}) }}
+{{ post_button("/users/" ~ u.id, "Delete", "btn sm danger", None, "Delete " ~ u.username ~ "?", {"action": "delete"}) }}{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></section>
+<div class="grid2">
+<section class="panel"><div class="ph"><h2>Add user</h2></div>
+<form method="post" action="/users" class="pb">{{ csrf_field() }}<div class="form">
+<label for="n-user">User name</label><input id="n-user" name="username" autocomplete="off" required>
+<label for="n-name">Full name</label><input id="n-name" name="name">
+<label for="n-role">Role</label><select id="n-role" name="role">{% for r in roles|reverse %}<option value="{{ r }}" {{ 'selected' if r == 'viewer' }}>{{ ROLE_TEXT[r] }}</option>{% endfor %}</select>
+<label for="n-pw">Password</label><input id="n-pw" type="password" name="password" autocomplete="new-password" required placeholder="at least 10 characters, letters and digits">
+</div><div class="row" style="margin-top:14px"><button class="btn primary">{{ icon("plus") }}Add user</button></div></form></section>
+<section class="panel"><div class="ph"><h2>Roles</h2></div><div class="tbox"><table class="t"><tbody>
+{% for r in roles|reverse %}<tr><td><b>{{ ROLE_TEXT[r] }}</b></td><td class="wrap">{{ role_help[r] }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="pb muted small" style="margin:0;padding-top:10px">At least one active admin is always kept. Five wrong passwords lock an account for 5 minutes. Disabling a user or setting a new password signs out their sessions.</p></section>
+</div>
+{% endblock %}

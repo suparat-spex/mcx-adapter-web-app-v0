@@ -1,65 +1,52 @@
-# NX Logger
+# MCX Adapter
 
-PySide6 desktop data logger (Yokogawa GA10 style, SCADA-like connectivity like Genesis64 /
-FUXA): devices (Simulation, Modbus TCP / RTU, MQTT, OPC UA; OPC DA planned) hold tags; the
-app shows them in free-form views (snap grid), alarms, computes statistics and records them.
-Formerly SX Logger / MQDAQ (MQTT waveform logger; last flat-file version: git tag `v6-mqdaq`).
+SPEX product: connects to manufacturing data sources and serves them as safe, standard MCP tools
+behind any MCP gateway / AI platform or directly to Claude. Must be **safe on its own**. Engine
+`mcx_core` (no Qt) + **web console `mcx_web`** (FastAPI + Jinja2, the main UI, local accounts and
+roles) + optional desktop app `mcx_studio` (PySide6). Both UIs use the Spex theme carried over from
+NX Logger. Formerly NX Logger (branch `nx-connectivity-categories`, tag `v6-mqdaq`).
 
-## Layout (src/nxlogger)
+## Layout (src/)
 
 | Path | Owns |
 |---|---|
-| `core/` | **No Qt.** `tags` (DeviceCfg, TagCfg, connector schemas `DRIVERS`, ScanBlock, tag CSV), `project` (model + file migration .sxl/.mqdaq -> .nxl), `view_model` (views: components with x / y / w / h on a snap grid; grid-layout views from 2.0 convert), `stat_buffer` (statistics windows s / min / h / samples, moving / block), `ring` (live buffers), `recording` (CSV / WPK writers, Recorder, zstd/gzip), `ml_log` (AI/ML data log), `alarm_rules` (AlarmEngine, Notifier), `channel_math` (scaling, safe formulas), `analysis` (statistics, FFT, STFT, histogram), `variables` (calculated tags), `templates` (Start Page > New project), `tag_collections` (Project tree > Collections: tag sets by purpose - Report, KPI, Monitoring, Equipment (nested); Assets / groups of older projects become Equipment), `virtual_tags` (Tags > Virtual: constants, formulas, conversions, logic, selectors, text maps), `aggregation` (Tags > Aggregation: statistic, totalizer, counter, runtime, min / max hold, change; periods / resets, retain), `system_tags` (System Tags: clock, app, recording, device status), `wavepacket` (ESP32 packet format) |
-| `comms/drivers/` | One driver thread per device: `base` (PollDriver, message protocol), `sim`, `modbus`, `mqtt`, `opcua` (+ Browser). `comms/manager.py` starts / stops them, one queue |
-| `comms/mqtt_client.py` | paho-mqtt in Qt signals - only the waveform simulator (`sim/`) uses it |
-| `ui/main_window.py` | `DaqWindow`: docks, documents, host API for pages, data path, recording (big - grep, don't read whole) |
-| `ui/dialogs/` | One dialog per file. Dialogs never import each other; shared helpers (SchemaForm, field_editor, ChannelPicker ...) in `common.py`. `device_pages/`: the connector sections of the one-page device pop-up, one page per connector (`base.ConnectionPage`: sections, labels, helpers, summary, validate) |
-| `ui/widgets/` | `form_tab` (editor tabs: a dialog embedded as a closable document with Apply / Refresh / Close / New... / Apply & Close / Apply & New...), `connectivity` (Connectivity document: device table, import / export JSON / CSV), `start_page` (Start Page: recent projects, templates, sessions, get started, docs), `collections_page` (Collections document: one purpose, its collections flat + their tags), `tags_page` (Tags document: device tree + tag table), `property_grid` (Properties panel), `properties` (what it shows per selection), `views` (free-form ViewPage + components), `gauge`, `alarm_panel`, `variables_panel`, `mqtt_panel` (simulator) |
-| `ui/theme/` | `ui_kit` (tokens `T`, QSS, AppWindow shell), `app_style` (extra QSS, Fusion), `DESIGN.md` |
-| `ui/icons.py` | All icons. Lucide SVGs in `resources/icons/ui/` |
-| `paths.py`, `config.py` | File locations (dev vs EXE) and `config.ini` |
-| `sim/publisher.py` | ESP32 waveform generator over MQTT |
-| `sim/water_plant.py` | Water treatment plant simulator over MQTT (JSON per area: raw water, pumps, dosing, filters, treated, power meter, environment, KPI); exports the NX Logger device / tag CSV; `water_plant_gui.py` = its window |
-| `sim/factory_energy.py` | Factory energy simulator: 11 power meters on a local Modbus TCP server (127.0.0.1:5020, units 1-11, float32 ABCD from address 0; pymodbus SimDevice, classic blocks as fallback): shifts, compressors, chiller, solar, events (trip, capacitor bank, demand peak); `factory_energy_gui.py` = its window. Start Page template "Factory energy demo" (`core/templates._factory_energy`: TOU cost, demand, kWh today, alarms, 3 views) |
-
-Docs: `docs/ui-guidelines.md` (editor tabs vs pop-ups), `docs/layout-and-menus.md` (Connectivity / Tags layout, lists, menus, pop-up tabs), `docs/connectivity.md` (connectors, addresses, tag CSV), `docs/recording-format.md`
-(session files - the contract with the NX Viewer), `docs/packet-format.md`, `docs/config.md`.
+| `mcx_core/config.py` | Project (.mcx YAML): sources (settings, discovered objects / items), tools (draft + `published` snapshot, version history), profiles, endpoint, auth (API keys: SHA-256 hashes only), limits, licence, audit cfg. `Project.publish` |
+| `mcx_core/adapters/` | One plug-in per source type: `base` (contract: SCHEMA, connect, ping/health, discover, read, history, select(Query)), `sql` (SQL Server / Postgres / MySQL / SQLite, identifier quoting, bound values, PII / block hints), `files` (CSV / Excel / REST via in-memory SQLite), `tags` (sim, Modbus, OPC UA, MQTT). Registry in `__init__` |
+| `mcx_core/model.py` | ISA-95 tree from exposed items; `in_scope` for profile scopes |
+| `mcx_core/tools.py` | Generic tool defs, JSON schemas, `check_args`, `curated_query`, answer `envelope` |
+| `mcx_core/safety.py` | Risk classes / annotations, `check_publishable`, `visible`, `coerce`, range check, RateLimiter |
+| `mcx_core/audit.py` | Hash-chained JSONL audit (`verify`, CSV export, syslog) |
+| `mcx_core/runtime.py` | The service: source threads (health, poll, history ring), `call_tool` (rate limit, timeout, audit), `publish`, clients, `rev` counter |
+| `mcx_core/mcp.py` | MCP JSON-RPC Session, Streamable HTTP server (profiles, auth, SSE notices, /health, /metrics), `run_stdio` |
+| `mcx_core/demo.py` | Demo plant: smc_demo SQLite, Excel, simulator, Modbus meters, tools, profiles, keys |
+| `mcx_web/app.py` | Console (runtime + MCP server in one process; `changed()` = save project + audit), every route; helpers (default_args, parse_args, snippets) |
+| `mcx_web/users.py` | Local accounts (SQLite `mcx_web.db` next to the project): PBKDF2 passwords, roles viewer < engineer < admin, sessions + CSRF, lockout, one-time flash |
+| `mcx_web/templates/`, `static/` | Jinja2 pages (base = top bar, nav, main, side panel, footer); `mcx.css` = Spex tokens light / dark; `mcx.js` = theme, autosubmit, test call, live status (no inline scripts - CSP) |
+| `mcx_studio/main_window.py` | `AdapterWindow`: tree, document tabs, Properties targets (`_prop_*`), Runtime dock, actions |
+| `mcx_studio/widgets/` | `common` (Page, panel, table, Kpi, KpiRow, Columns, StepBar, Worker), `overview`, `source_page` (Connect > Discover > Expose > Review & publish), `profiles_page`, `pages` (Tools, Model, Safety, Endpoint, Audit, Licence, Alarms), `property_grid` |
+| `mcx_studio/theme/` | `ui_kit` (tokens `T`, QSS, AppWindow), `app_style` (extra QSS), `DESIGN.md` |
 
 ## Commands
 
 ```
-pip install -e ".[dev]"                 # once
-python -m nxlogger                      # app        (python -m nxlogger.sim = waveform publisher)
-python -m nxlogger.sim.water_plant      # water treatment plant over MQTT (--help; --export-device wtp.json)
-python -m nxlogger.sim.water_plant_gui  # the same with a window (live values, copy topic / JSON path)
-python -m nxlogger.sim.factory_energy_gui  # factory energy: 11 meters on Modbus TCP 127.0.0.1:5020 (--speed 60)
-python -m pytest -q                     # fast tests (Modbus / OPC UA tests start local servers)
-python -m pyflakes src tests            # lint
-.\packaging\build.ps1                   # EXE + installer
+pip install -e ".[dev]"
+python -m mcx_web --demo              # adapter + web console http://127.0.0.1:8810
+python -m mcx_studio                  # optional desktop app
+python -m mcx_core demo|serve|stdio|key|audit|tools ...
+python -m mcx_core.sim.factory_energy # Modbus power meters 127.0.0.1:5020
+python -m pytest -q
+python -m pyflakes src tests
 ```
-
-Full end-to-end check (local Modbus + OPC UA servers, alarms, recording, screenshots): see the `nxlogger-dev` skill.
 
 ## Rules
 
-- `core/` never imports Qt or `ui/`; `comms/drivers` never import Qt. Only `paths.py` knows where files are; only `icons.py` loads icons.
-- Use git branches for new versions - never copy files to `_2`, `_backup`.
-- Project files are JSON (`.nxl`, `"version": 2`; `.sxl` / `.mqdaq` still open). New fields need defaults + migration in `Project.from_dict` / `normalize_view` / `normalize_tile`.
-- Live data is keyed `(device_id, tag_index)`; a tag's index never changes. Variables are `("var:<id>", 0)`: they share streams, alarms, views and logging with tags.
-  In formulas a tag is `<device>_<tag>` (`channel_math.identifier`).
-- New connector: schema in `core/tags.DRIVERS`, driver in `comms/drivers/` (subclass `PollDriver`: open / read / close / do_write), case in `make_driver`, a Connection page in `ui/dialogs/device_pages/<name>.py` (+ `PAGES`), test against a local server in `tests/test_drivers.py`.
-- Colours only from theme tokens (`T["bad"]`, `@border@` in QSS). Must look right in dark + light (Fusion style only).
-- Formulas go through `channel_math.compile_expr` / `compile_formula` (AST whitelist) - never `eval` user text.
-- Threads: drivers and paho callbacks only queue; decode / scale / alarms / statistics on the GUI timer; disk + REST in workers.
-- The grid-layout view version is kept on branch `nx-views-grid` (not merged).
-- Tabs vs pop-ups: **docs/ui-guidelines.md**. Saved items open in editor tabs (`DaqWindow.open_editor(what, ident, **ctx)`, a `_spec_<what>`: alarm, aprofile, variable, lprofile, mllog); new items are drafts until Apply. Pop-ups only for actions: subclass `common.ActionDialog`, confirm with `common.confirm` / `ask_unsaved` - never `QMessageBox.question` / `QInputDialog` directly. Background events never open a pop-up. The project, devices, tags, collections, virtual and aggregation tags, views and view components are the exception: settings pop-ups (`_project_popup`, `_device_popup`, `_tag_popup`, `_collection_popup`, `_vt_popup`, `_agg_popup`, `_view_popup`, `_tile_popup`; `common.popup_form`, tabs style) and read-only in Properties.
-- Connectivity document = connector list + device table only (no tags; right-click only on device rows); device settings are a pop-up (`DaqWindow._device_popup`), not a tab, and read-only in Properties (`PropTarget.readonly`). Right side: Properties dock + Runtime dock (`runtime_dock`). Tags document = tag management.
-- Toolbars never move: changing text -> `ui_kit.fixed_width(w, *texts)`; disable buttons, don't hide them.
-- Project tree: Connectivity = three flat categories (Protocols, Database, Web Services - `core/tags.CONN_CATEGORIES`, a driver's `category`; the Connectivity document lists connectors > devices, like Tags); Tags = All tags + six flat categories (All tags, Device, Virtual, Action, Aggregation, Memory, System - `tags_page.CATEGORIES`; no groups: search / sort and a Collections column); Collections = the four purposes, flat (`("colpurpose", key)`; the Collections document shows one purpose, its collections flat with their path, like Tags / Connectivity); at startup the Start Page is the only tab (other documents and views open as tabs when used); the project root opens the Start Page (closable, back from the house / Project menu / Ctrl+0); Quick View (live plots) is in the Project menu and no longer opens at startup.
-- Views have a fixed canvas (`width` x `height`, default 1920 x 1080, `align` left / center; View pop-up > Size): it never stretches, the scroll area shows scroll bars, components stay inside it (drag, resize, Position tab). Home / New / Open / Save on the toolbar are icons only, always (`_icon_only`).
-- Monitor mode (`DaqWindow.enter_monitor` / `exit_monitor`, `ui/widgets/monitor_bar.py`): full-screen views for watching - everything but the view and the slim Monitor bar hidden, the layout restored on exit (`saveState`); F11 / Esc / Page Up / Page Down; options per PC in QSettings `monitor/...`. A logger display, not a control HMI.
-- System Tags (`core/system_tags.py`): fixed, read-only, key `("sys:<id>", 0)`, computed on the 500 ms stats timer and fed like a device block (streams, alarms, statistics, formulas `System_<name>`).
-- Virtual tags (`core/virtual_tags.py`, `project.virtual_tags`): derived values - inputs in, value out, no state, not written at runtime. Key `("vt:<id>", 0)`, formulas `Virtual_<name>`; scalar formulas go through `channel_math.compile_scalar` (AST interpreter, text allowed). Calculated on the GUI timer after the queue drains; numbers / booleans fed like System Tags, text shown only. Signal processing stays in Variables.
-- Aggregation tags (`core/aggregation.py`, `project.aggregations`): values with state over time. Key `("agg:<id>", 0)` = value, `1` = previous period (`keep_prev`); formulas `Aggregation_<name>` / `_Previous`. Updated on the GUI timer after Virtual tags; a bad / stale source pauses them. Running values (retain) go to `paths.data_dir()/aggregation_state.json` (a worker writes, every 30 s and on exit) - never into the project file.
-- Collections (`core/tag_collections.py` - not `collections`, that shadows Python's; `project.collections`): tag sets by purpose (`tc.PURPOSES`): Report (a new one gets a 15-min statistics logging profile, `project.report_profile`), KPI (values on the Start Page "Key values" card and as Monitor bar chips - `DaqWindow.kpi_values`), Monitoring (New view / Monitor in one click - `monitor_collection`), Equipment (the only nested purpose, `tc.NESTED`: site > area > unit > equipment, up to 4 levels, a flat list with `parent`). Attributes reference tags of any category by key (`{"key": [tid, idx], "name": short name}`) - many-to-many: a tag can be in several collections, collections never own tags. Tags have no groups: `TagCfg.group`, `DeviceCfg.groups`, `project.groups`, virtual / aggregation `group` and the 2.x `assets` are read from older files and become Equipment collections by `tc.migrate` (load, templates, tag / device import; logging profiles' `assets` -> `collections`). Every tag picker (`common.ChannelPicker`) has By tag / By collection (`ChannelPicker.collection_source`, set by the window) and "Select <name> in all"; logging profiles can take whole collections (`collections`: ids, kept live).
+- `mcx_core` never imports Qt. Only `mcx_core/paths.py` (data) and `mcx_studio/paths.py` (resources) know file locations; only `icons.py` loads icons.
+- **No free SQL / protocol commands, ever.** Tools take typed parameters; table reads go through `adapters.base.Query` (columns must exist in the discovered object and are quoted, values are bound). No write path in v1 (R4 / R5 refuse to publish).
+- Every tool call goes through `Runtime.call_tool` (rate limit, args check, timeout, audit). Every answer uses `tools.envelope`. PII columns are dropped from results and block publishing.
+- MCP edge stays pure standard MCP (gateways need configuration only). Clients see the *published snapshot*; edits are drafts until Publish, which sends `tools/list_changed`.
+- Secrets: API keys stored as hashes, shown once; source passwords may be `${ENV}`.
+- New source type: subclass `Adapter` (FAMILY table | tags, SCHEMA, ping, discover, read / select), add to `ADAPTERS`, test against a local server / file in `tests/`.
+- Web console: every POST goes through `posted(request, role)` (role + CSRF); every config change through `Console.changed()` (saves the project, audits with the user); role checks on the server, never only by hiding buttons. No CDN / web fonts / inline scripts. Colours only via the CSS variables in `mcx.css`; check light + dark and a 1280 px window.
+- Studio: colours only from theme tokens (dark + light, Fusion). `fusion_qss` drops `QPushButton…`, `QLineEdit…`, `QPlainTextEdit…` QSS lines - style page widgets with `QAbstractButton#…`, `QWidget#…`, `QAbstractScrollArea#…`. Pages: `refresh()` = full rebuild (structure changed), `tick()` = live state only (never rebuild editors). Blocking work via `widgets.common.Worker`. Toolbars never move (`fixed_width`). Must work at 1280 x 800 (`Columns`, `KpiRow`).
+- Use git branches for new versions. Project files are YAML `.mcx`; new fields need defaults in the dataclasses (`from_dict` ignores unknown keys).
 - Put scratch files in the session scratchpad, not the repo.

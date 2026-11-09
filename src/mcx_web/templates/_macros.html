@@ -1,0 +1,6 @@
+{% macro csrf_field() %}<input type="hidden" name="csrf" value="{{ csrf }}">{% endmacro %}
+{% macro post_button(action, text, cls="btn", icon_name=None, confirm=None, fields={}, disabled=False) %}
+<form method="post" action="{{ action }}" class="inline">{{ csrf_field() }}{% for k, v in fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+<button class="{{ cls }}" {% if confirm %}data-confirm="{{ confirm }}"{% endif %} {% if disabled %}disabled{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ text }}</button></form>
+{% endmacro %}
+{% macro kpi(title, value, detail="", cls="") %}<div class="panel kpi"><div class="muted">{{ title }}</div><div class="v {{ cls }}">{{ value }}</div><div class="muted small">{{ detail }}</div></div>{% endmacro %}

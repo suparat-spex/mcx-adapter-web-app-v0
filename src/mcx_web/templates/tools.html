@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}Tools{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Tools</div>
+<div class="head"><div><h1>Tools</h1><p>Generic tools read the ISA-95 model · curated tools answer one business question with typed parameters - never free SQL</p></div>
+<form action="/tools" method="get" class="row"><label class="sr" for="tq">Filter tools</label><input id="tq" name="q" value="{{ q }}" placeholder="Filter"><button class="btn">Filter</button></form></div>
+<section class="panel"><div class="ph"><span class="muted">All tools</span><span class="note">{{ summary.tools }} published · {{ pending }} pending</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Tool</th><th>Kind</th><th>Source · object</th><th>Risk</th><th>State</th><th>Version</th><th>Profiles</th><th class="r">Calls today</th></tr></thead><tbody>
+{% for r in rows %}<tr class="link {{ 'dim' if not r.t.enabled }}" data-href="/tools/{{ r.t.name }}"><td class="mono"><a href="/tools/{{ r.t.name }}">{{ r.t.name }}</a></td><td class="muted">{{ r.t.kind }}</td><td>{{ r.where }}</td><td class="{{ r.t.risk }}">{{ r.t.risk }}</td>
+<td class="{{ {'published':'ok','changed':'warn','draft':'warn'}[r.t.state] }}">{{ r.t.state }}</td><td>{{ ('v' ~ r.t.version) if r.t.version else '–' }}</td><td class="muted">{{ r.t.profiles|join(', ') or '–' }}</td><td class="r">{{ r.calls|fmt }}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">No tools match</td></tr>{% endfor %}
+</tbody></table></div></section>
+<p class="muted small" style="margin:0">New curated tools come from a source: open it, step 3 (Expose as MCP tools), tick a table or view.</p>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% from "_macros.html" import kpi with context %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Overview</div>
+<div class="head"><div><h1>Overview</h1><p>MCP server · <span class="mono">{{ mcp_url }}</span> · licence {{ project.licence.edition }} ({{ project.licence.max_sources or 'unlimited' }} sources)</p></div>
+<a class="btn" href="/">{{ icon("refresh") }}Refresh</a>{% if can_edit %}<a class="btn" href="/audit/export.csv">{{ icon("download") }}Export audit</a>{% endif %}</div>
+{% if alarms %}<div id="alarms" class="panel banner {{ 'bad' if alarms|selectattr('level','equalto','bad')|list else 'warn' }}"><span>{% for a in alarms %}<a href="{{ a.href }}">{{ a.where }}</a>: {{ a.text }}{% if not loop.last %}<br>{% endif %}{% endfor %}</span>
+{% if pending and can_edit %}<a class="btn" href="/tools">Review &amp; publish ({{ pending }})</a>{% endif %}</div>{% endif %}
+{% if not project.sources %}<div class="panel" style="padding:40px;text-align:center"><h2>No sources yet</h2><p class="muted">Add a data source - SQL Server, OPC UA, Modbus, MQTT, Excel - then discover it and expose it as MCP tools.</p>{% if can_edit %}<a class="btn primary" href="/sources/new">{{ icon("plus") }}Add source</a>{% endif %}</div>{% endif %}
+<div class="kpis">
+{% set down = nav_sources|rejectattr('state','equalto','online')|rejectattr('state','equalto','disabled')|list %}
+{{ kpi("Sources online", online ~ " / " ~ n_sources, (down[0].name ~ ": " ~ (down[0].msg or down[0].state))[:44] if down else "all online") }}
+{{ kpi("Tools published", summary.tools, summary.generic ~ " generic · " ~ summary.curated ~ " curated") }}
+{{ kpi("MCP calls today", summary.calls_today|fmt, summary.clients ~ " clients · 100 % cited", "accent") }}
+{{ kpi("Blocked by limits", summary.blocked_today, "range, rows, rate, profile") }}
+</div>
+<div class="grid2">
+<div class="col">
+<section class="panel"><div class="ph"><span class="muted">Connected clients</span><span class="note">any MCP gateway or AI platform</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Client</th><th>Via</th><th>Profile</th><th>Auth</th><th class="r">Calls today</th></tr></thead><tbody>
+{% for cl in clients %}<tr class="{{ 'dim' if cl.dim }}"><td><b>{{ cl.name }}</b></td><td class="muted">{{ cl.via }}</td><td class="mono">{{ cl.profile }}</td><td class="muted">{{ cl.auth }}</td><td class="r">{{ cl.calls|fmt }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">No clients yet - see Tool profiles › Connect a client</td></tr>{% endfor %}
+</tbody></table></div></section>
+<section class="panel"><div class="ph"><span class="muted">Sources</span><span class="note">read-only connections</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Source</th><th>Type</th><th>Status</th><th class="r">Latency</th><th>Discovered</th></tr></thead><tbody>
+{% for s in nav_sources %}<tr class="link" data-href="/sources/{{ s.id }}"><td><a href="/sources/{{ s.id }}"><b>{{ s.name }}</b></a></td><td class="muted">{{ s.type }}</td>
+<td class="{{ s.token }}" title="{{ s.msg }}"><span class="dot {{ s.token }}"></span> {{ s.state if s.state != 'error' else (s.msg.split(':')[-1].strip()[:24] or 'error') }}</td>
+<td class="r">{{ (s.lat|round|int ~ ' ms') if s.lat else '–' }}</td>
+<td class="muted">{% set n = s.cfg.objects|length or s.cfg.items|length %}{{ n|fmt if n else '–' }} {{ 'objects' if s.cfg.objects else ('items' if n else '') }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+</div>
+<div class="col">
+<section class="panel"><div class="ph"><span class="muted">Audit log · latest</span><a class="note" href="/audit">hash-chained · {{ summary.calls_today|fmt }} today</a></div>
+<div class="tbox"><table class="t"><thead><tr><th>Time</th><th>Client</th><th>Tool</th><th class="r">Rows</th><th>Result</th></tr></thead><tbody>
+{% for a in audit %}<tr><td class="muted">{{ a.t }}</td><td>{{ a.client }}</td><td class="mono">{{ a.tool }}</td><td class="r">{{ a.rows }}</td><td class="{{ result_token.get(a.result, 'muted') }}" title="{{ a.error }}">{{ a.result }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">No calls yet</td></tr>{% endfor %}
+</tbody></table></div></section>
+<section class="panel"><div class="ph"><span class="muted">Safety &amp; limits</span><span class="note">applied to every client</span></div>
+<div class="pb chips"><span class="chip s-ok">{{ icon("shield",14) }}Read-only sources</span><span class="chip s-ok">✕ No free SQL</span><span class="chip s-ok">✕ No PLC writes</span>
+<span class="chip s-info">Max {{ project.limits.max_rows }} rows</span><span class="chip s-info">Max {{ project.limits.max_days }} days</span><span class="chip s-info">Timeout {{ '%g'|format(project.limits.timeout_s) }} s</span><span class="chip s-info">{{ project.limits.rate_per_min }} calls / min</span>
+<span class="chip s-info">{{ pii }} personal-data columns hidden</span><span class="chip s-info">R2–R5 tools off</span>{% if held %}<span class="chip s-warn">{{ held }} R2 tool held back</span>{% endif %}</div></section>
+</div>
+</div>
+{% endblock %}
+{% block side %}
+<aside class="side" aria-label="MCP endpoint">
+<div class="sh"><div class="title">MCP endpoint</div><div class="muted small">Standard MCP server · works with any gateway or AI platform</div></div>
+<div class="sec">Server</div>
+<dl class="kv"><dt>URL</dt><dd class="mono">{{ mcp_url }}</dd><dt>Transports</dt><dd>{{ 'Streamable HTTP' if project.endpoint.http }}{{ ', ' if project.endpoint.http and project.endpoint.stdio }}{{ 'stdio' if project.endpoint.stdio }}</dd>
+<dt>TLS</dt><dd>{{ 'On' if project.endpoint.tls_cert else 'Off (TLS proxy)' }}</dd><dt>State</dt><dd class="{{ 'ok' if server.running else 'bad' }}">{{ 'running' if server.running else ('stopped' ~ (': ' ~ server.error if server.error else '')) }}</dd><dt>Sessions</dt><dd>{{ server.sessions|length }}</dd></dl>
+<div class="sec">Authentication</div>
+<dl class="kv"><dt>API keys</dt><dd>{{ project.auth.api_keys|length }} active</dd><dt>Web console</dt><dd>Local accounts · 3 roles</dd><dt>OAuth 2.1</dt><dd class="muted">planned</dd></dl>
+<div class="sec">Audit</div>
+<dl class="kv"><dt>Store</dt><dd class="mono">audit/*.jsonl</dd><dt>Export</dt><dd>{{ ('syslog → ' ~ project.audit.syslog_host) if project.audit.syslog_host else 'CSV' }}</dd></dl>
+<div class="sec">Runtime</div>
+<div class="rt"><span class="chip {{ 's-ok' if online == n_sources else 's-warn' }}">Sources {{ online }}/{{ n_sources }}</span><span class="chip {{ 's-accent' if server.running else 's-bad' }}">{{ 'MCP ready' if server.running else 'MCP stopped' }}</span>
+<div class="panel"><span class="muted small">Tools published</span><b>{{ summary.tools }}</b></div><div class="panel"><span class="muted small">Clients</span><b>{{ summary.clients }}</b></div></div>
+</aside>
+{% endblock %}

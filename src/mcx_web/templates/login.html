@@ -1,0 +1,11 @@
+{% extends "_auth.html" %}{% block title %}Sign in{% endblock %}
+{% block content %}
+<form method="post" action="/login" style="display:flex;flex-direction:column;gap:12px">
+<input type="hidden" name="next" value="{{ next }}">
+<label>User name<input name="username" autocomplete="username" required autofocus></label>
+<label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+{% if err %}<div class="err" role="alert">{{ err }}</div>{% endif %}
+<button class="btn primary">Sign in</button>
+</form>
+<p class="muted small" style="margin:0">Roles: Admin (users, keys, endpoint, licence) · Engineer (sources, tools, publish) · Viewer (read only). Every sign-in and change is written to the audit log. Forgot your password? Ask an admin to reset it.</p>
+{% endblock %}

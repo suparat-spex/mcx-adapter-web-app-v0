@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% block title %}Safety &amp; limits{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Safety &amp; limits</div>
+<div class="head"><div><h1>Safety &amp; limits</h1><p>MCX Adapter enforces its own limits at the source - the gateway can add its policy on top</p></div></div>
+<div class="grid2">
+<div class="col">
+<section class="panel"><div class="ph"><h2>Limits</h2><span class="note">applied to every client</span></div>
+<form method="post" action="/safety/limits" class="pb">{{ csrf_field() }}{% set d = 'disabled' if not can_edit else '' %}
+<div class="form">
+<label for="l1">Max rows per answer</label><input id="l1" name="max_rows" value="{{ lim.max_rows }}" inputmode="numeric" {{ d }}>
+<label for="l2">Max days per call</label><input id="l2" name="max_days" value="{{ lim.max_days }}" inputmode="numeric" {{ d }}>
+<label for="l3">Timeout (s)</label><input id="l3" name="timeout_s" value="{{ lim.timeout_s }}" inputmode="decimal" {{ d }}>
+<label for="l4">Calls per minute per client</label><input id="l4" name="rate_per_min" value="{{ lim.rate_per_min }}" inputmode="numeric" {{ d }}>
+<label for="l5">Live value cache (s)</label><input id="l5" name="cache_s" value="{{ lim.cache_s }}" inputmode="decimal" {{ d }}>
+</div>{% if can_edit %}<div class="row" style="margin-top:14px"><button class="btn primary">Save limits</button></div>{% endif %}</form>
+<div class="pb chips"><span class="chip s-ok">{{ icon("shield",14) }}Read-only sources</span><span class="chip s-ok">✕ No free SQL</span><span class="chip s-ok">✕ No PLC writes</span></div></section>
+<section class="panel"><div class="ph"><h2>Risk classes</h2><span class="note">sent to clients as MCP annotations · v1 serves R0–R3</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Class</th><th>Meaning</th><th>MCP annotations</th><th>v1</th></tr></thead><tbody>
+{% set ann = {0:'readOnlyHint: true',1:'readOnlyHint: true',2:'readOnlyHint: true · sensitive',3:'readOnlyHint: true',4:'readOnlyHint: false',5:'destructiveHint: true'} %}
+{% set v1 = {0:'On',1:'On',2:'Off until enabled per tool',3:'On (built-in models)',4:'Not in v1',5:'Not in v1'} %}
+{% for k, info in RISK_INFO.items() %}{% set lv = risk_level(k) %}<tr><td class="{{ k }}">{{ k }}</td><td class="wrap">{{ info[0] }} - {{ info[1] }}</td><td class="mono small">{{ ann[lv] }}</td><td class="{{ 'ok' if lv in (0,1,3) else ('warn' if lv == 2 else 'muted') }}">{{ v1[lv] }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+</div>
+<section class="panel"><div class="ph"><h2>Allow-list and personal data</h2><span class="note">new objects start hidden</span></div>
+<form method="post" action="/safety/pii">{{ csrf_field() }}
+<div class="tbox"><table class="t"><thead><tr><th>Object / column</th><th>Status</th><th class="c">Personal data</th></tr></thead><tbody>
+{% for s in srcs %}<tr><td colspan="3"><b>{{ s.name }}</b> <span class="muted">({{ nav_sources|selectattr('id','equalto',s.id)|map(attribute='type')|first }})</span></td></tr>
+{% for o in s.objects %}<tr><td class="mono" style="padding-left:24px">{{ o.name }}</td><td class="{{ 'bad' if o.blocked else ('ok' if o.exposed else 'muted') }}">{{ 'blocked by rule' if o.blocked else ('exposed' if o.exposed else 'hidden') }}</td><td class="c warn small">{{ o.pii_columns()|sort|join(', ') }}</td></tr>
+{% for col in o.columns %}<tr class="dim"><td class="mono small" style="padding-left:48px">{{ col.name }} <span class="muted">{{ col.type }}</span></td><td></td><td class="c"><input type="checkbox" name="pii" value="{{ s.id }}|{{ o.name }}|{{ col.name }}" {{ 'checked' if col.pii }} aria-label="{{ o.name }}.{{ col.name }} is personal data" {% if not can_edit %}disabled{% endif %}></td></tr>{% endfor %}
+{% endfor %}{% else %}<tr><td colspan="3" class="muted">No table sources yet</td></tr>{% endfor %}
+</tbody></table></div>
+{% if can_edit and srcs %}<div class="pb row" style="padding-top:12px"><button class="btn primary">Save personal-data columns</button><span class="muted small" style="flex:1 1 260px">Ticked columns are never selected or returned, and a tool that uses one cannot be published.</span></div>{% endif %}
+</form></section>
+</div>
+{% endblock %}

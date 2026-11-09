@@ -1,0 +1,110 @@
+{% extends "base.html" %}{% from "_macros.html" import kpi with context %}
+{% block title %}{{ s.name }}{% endblock %}
+{% block content %}
+<div class="crumb"><a href="/">Sources</a> / {{ s.name }}</div>
+<div class="head"><div><h1>{{ nav_sources|selectattr('id','equalto',s.id)|map(attribute='type')|first }} · {{ s.name }}</h1>
+<p>{% if s.type == 'sql' %}{{ 'read-only file' if s.settings.get('dialect') == 'sqlite' else 'login ' ~ s.settings.get('user','') ~ ' (db_datareader)' }} · {% endif %}{{ s.isa95 or 'no ISA-95 context' }} ·
+<span class="{{ state_token.get(h.state if s.enabled else 'disabled') }}">{{ h.state if s.enabled else 'disabled' }}{% if h.message %} ({{ h.message }}){% endif %}</span>{% if h.latency_ms %} · {{ h.latency_ms|round|int }} ms{% endif %}</p></div>
+{% if can_edit %}{{ post_button("/sources/" ~ s.id ~ "/discover", "Re-discover", "btn", "refresh") }}
+{% if pending_here %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="back" value="/sources/{{ s.id }}?step=3">{% for t in pending_here %}<input type="hidden" name="tool" value="{{ t.name }}">{% endfor %}<button class="btn primary">{{ icon("upload") }}Publish {{ pending_here|length }} tool{{ 's' if pending_here|length != 1 }}</button></form>{% endif %}{% endif %}
+</div>
+<nav class="steps" aria-label="Setup steps">{% for st in STEPS %}<a class="step {{ 'on' if loop.index0 == step else ('done' if loop.index0 in done) }}" href="/sources/{{ s.id }}?step={{ loop.index0 }}" {% if loop.index0 == step %}aria-current="step"{% endif %}>{{ '✓ ' if loop.index0 in done and loop.index0 != step }}{{ loop.index }}. {{ st }}</a>{% if not loop.last %}<span class="muted" aria-hidden="true">›</span>{% endif %}{% endfor %}</nav>
+
+{% if step == 0 %}
+<div class="grid2">
+<section class="panel"><div class="ph"><h2>Connection</h2><span class="note">use a read-only account</span></div>
+<form method="post" action="/sources/{{ s.id }}/settings" class="pb">{{ csrf_field() }}
+<div class="form">
+<label for="f-name">Name</label><input id="f-name" name="name" value="{{ s.name }}" {% if not can_edit %}disabled{% endif %}>
+<label for="f-isa">ISA-95 context</label><input id="f-isa" name="isa95" value="{{ s.isa95 }}" placeholder="Site/Area" {% if not can_edit %}disabled{% endif %}>
+<label for="f-en">Enabled</label><span><input id="f-en" type="checkbox" name="enabled" {{ 'checked' if s.enabled }} {% if not can_edit %}disabled{% endif %}></span>
+{% for f in settings_view %}<label for="f-{{ f.key }}" title="{{ f.tip }}">{{ f.label }}</label>
+{% if f.type == 'bool' %}<span><input id="f-{{ f.key }}" type="checkbox" name="{{ f.key }}" {{ 'checked' if f.value }} {% if not can_edit %}disabled{% endif %}></span>
+{% elif f.type == 'choice' %}<select id="f-{{ f.key }}" name="{{ f.key }}" {% if not can_edit %}disabled{% endif %}>{% for v, t in f.choices %}<option value="{{ v }}" {{ 'selected' if v == f.value }}>{{ t }}</option>{% endfor %}</select>
+{% elif f.type == 'text' %}<textarea id="f-{{ f.key }}" name="{{ f.key }}" rows="3" {% if not can_edit %}disabled{% endif %}>{{ f.value }}</textarea>
+{% elif f.type == 'password' %}<input id="f-{{ f.key }}" type="password" name="{{ f.key }}" autocomplete="new-password" placeholder="{{ '•••••••• (stored - empty keeps it)' if f.has_secret else 'or ${ENV_VAR}' }}" {% if not can_edit %}disabled{% endif %}>
+{% else %}<input id="f-{{ f.key }}" name="{{ f.key }}" value="{{ f.value }}" {% if f.type in ('int','float') %}inputmode="decimal"{% endif %} {% if not can_edit %}disabled{% endif %}>{% endif %}
+{% endfor %}
+</div>
+{% if can_edit %}<div class="row" style="margin-top:14px"><button class="btn primary">Save and reconnect</button>
+<button class="btn" type="button" data-post-json="/sources/{{ s.id }}/test" data-out="conn-out">Test connection</button><span id="conn-out" class="small muted"></span></div>{% endif %}
+</form></section>
+<section class="panel"><div class="ph"><h2>Read-only by design</h2></div><p class="pb" style="margin:0">MCX Adapter never writes to a source: SQL logins should have db_datareader only, tools take typed parameters (no free SQL, no protocol commands) and every answer is capped and audited. Passwords can be <code>${ENV_VAR}</code> references, so they stay out of the project file.</p>
+{% if can_edit %}<div class="pb row">{{ post_button("/sources/" ~ s.id ~ "/restart", "Restart source", "btn", "refresh") }}{{ post_button("/sources/" ~ s.id ~ "/delete", "Delete source", "btn danger", "trash", "Delete " ~ s.name ~ " and its tools? Clients stop seeing them.") }}</div>{% endif %}</section>
+</div>
+
+{% elif step == 1 %}
+<section class="panel"><div class="ph"><h2>Discovered</h2>{% if can_edit %}{{ post_button("/sources/" ~ s.id ~ "/discover", "Discover again" if (s.objects or s.items) else "Discover", "btn primary", "scan-search") }}{% endif %}<span class="note">{{ (s.objects|length) if not tags else (s.items|length) }} {{ 'objects' if not tags else 'items' }} · discovered {{ s.discovered or 'never' }}</span></div>
+<div class="tbox"><table class="t">
+{% if tags %}<thead><tr><th>ISA-95 path</th><th>Address</th><th>Unit</th><th>Type</th><th>Status</th></tr></thead><tbody>
+{% for it in s.items %}<tr><td>{{ it.full_path }}</td><td class="mono">{{ it.address }}</td><td>{{ it.unit }}</td><td class="muted">{{ it.datatype }}</td><td class="{{ 'ok' if it.exposed else 'muted' }}">{{ 'exposed' if it.exposed else 'hidden' }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Nothing discovered yet - press Discover</td></tr>{% endfor %}
+{% else %}<thead><tr><th>Name</th><th>Kind</th><th class="r">Columns</th><th>Personal data</th><th>Status</th></tr></thead><tbody>
+{% for o in s.objects %}<tr><td class="mono">{{ o.name }}</td><td class="muted">{{ o.kind }}</td><td class="r">{{ o.columns|length }}</td><td class="{{ 'warn' if o.pii_columns() else 'muted' }}">{{ o.pii_columns()|sort|join(', ') or '–' }}</td>
+<td class="{{ 'bad' if o.blocked else ('ok' if o.exposed else 'muted') }}">{{ 'blocked by rule' if o.blocked else ('exposed' if o.exposed else 'hidden (allow-list)') }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Nothing discovered yet - press Discover</td></tr>{% endfor %}{% endif %}
+</tbody></table></div></section>
+
+{% elif step == 2 %}
+<div class="grid2">
+<div class="col">
+<div class="kpis">{{ kpi("Objects discovered" if not tags else "Items discovered", stats.objects|fmt, stats.objects_detail) }}{{ kpi("Exposed as tools" if not tags else "Exposed", stats.exposed, stats.exposed_detail, "accent") }}{{ kpi("Highest risk", stats.risk, "read only · no free SQL" if not tags else "generic tools") }}</div>
+<section class="panel"><div class="ph"><span class="muted">Discovered items → MCP tools</span><span class="note">{{ 'served by browse_model · read_tag · query_history' if tags else rows|length ~ ' objects' }}</span></div>
+<div class="tbox"><table class="t">
+{% if tags %}<thead><tr><th><span class="sr">Exposed</span></th><th>ISA-95 path</th><th>Address</th><th>Unit</th><th>Limits</th></tr></thead><tbody>
+{% for r in rows %}<tr class="link {{ 'sel' if r.key == sel }} {{ 'dim' if not r.on }}" data-href="/sources/{{ s.id }}?step=2&amp;obj={{ r.key|urlencode }}">
+<td><form method="post" action="/sources/{{ s.id }}/expose">{{ csrf_field() }}<input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="on" value="{{ '0' if r.on else '1' }}"><input type="checkbox" {{ 'checked' if r.on }} aria-label="Expose {{ r.path }}" data-autosubmit {% if not can_edit %}disabled{% endif %}></form></td>
+<td>{{ r.path }}</td><td class="mono cut">{{ r.address }}</td><td>{{ r.unit }}</td><td class="muted">{{ r.limits }}</td></tr>{% endfor %}
+{% else %}<thead><tr><th><span class="sr">Exposed</span></th><th>Source object</th><th>MCP tool</th><th>Risk</th><th>Profiles</th></tr></thead><tbody>
+{% for r in rows %}<tr class="link {{ 'sel' if r.key == sel }}" data-href="/sources/{{ s.id }}?step=2&amp;obj={{ r.key|urlencode }}">
+<td><form method="post" action="/sources/{{ s.id }}/expose">{{ csrf_field() }}<input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="on" value="{{ '0' if r.on else '1' }}"><input type="checkbox" {{ 'checked' if r.on }} aria-label="Expose {{ r.key }}" data-autosubmit {% if r.obj.blocked or not can_edit %}disabled{% endif %}></form></td>
+<td class="{{ 'dim' if not r.on }}">{{ r.key }}</td><td class="{{ 'dim' if not r.on }}">{% if r.tool and r.on %}<a href="/tools/{{ r.tool.name }}"><b>{{ r.label }}</b></a>{% if r.tool.changed and r.on %} <span class="chip s-warn">{{ r.tool.state }}</span>{% endif %}{% else %}{{ r.label }}{% endif %}</td>
+<td class="{{ r.risk }}">{{ r.risk }}</td><td class="muted">{{ r.profiles }}</td></tr>{% endfor %}{% endif %}
+</tbody></table></div></section>
+</div>
+<section class="panel" aria-label="Tool preview">
+{% if cur %}
+<div class="ph"><h2>Tool preview</h2><span class="muted">as the AI sees it</span><span class="note"><span class="chip {{ 's-ok' if ann.get('readOnlyHint') else 's-bad' }}">{{ icon("shield",14) }}{{ 'readOnlyHint' if ann.get('readOnlyHint') else 'write' }}</span></span></div>
+<div class="pb col" style="gap:10px">
+<div class="mono" style="color:var(--accent-ink);overflow-wrap:anywhere">{{ sig }}</div>
+<p style="margin:0">{{ cur.description }}{% if cur.kind == 'curated' %} Dates are plant local time ({{ tz }}). Read-only; every answer carries its source.{% endif %}</p>
+<div class="tbox"><table class="t"><thead><tr><th>Parameter</th><th>Type</th><th>Notes</th></tr></thead><tbody>
+{% for p in params %}<tr><td class="mono">{{ p.name }}</td><td>{{ p.type }}</td><td class="muted wrap">{{ p.notes }}</td></tr>{% endfor %}</tbody></table></div>
+{% if can_edit %}<form id="test-form" method="post" action="/tools/{{ cur.name }}/test" class="row"><label for="args"><b>Test call</b></label>
+<input id="args" name="args" class="mono argbox" value="{{ args }}"><button class="btn primary">▶ Run</button></form>
+<pre id="test-out" class="code" style="min-height:200px">Run a test call to see the answer envelope.</pre>
+<div id="test-note" class="small muted">Test calls use the draft{% if cur.changed %} (changed since v{{ cur.version }}){% endif %} and are audited as tests.</div>{% endif %}
+<div class="row"><a class="btn" href="/tools/{{ cur.name }}">{{ icon("pencil") }}Edit tool</a></div>
+</div>
+{% elif obj %}
+<div class="ph"><h2>{{ obj.name }}</h2><span class="note">{{ obj.kind }}</span></div>
+<div class="pb"><p style="margin-top:0">{{ 'Blocked by rule: system / security objects are never exposed.' if obj.blocked else 'Not exposed. Tick it to create a curated tool from this object (typed parameters, server-side aggregation - never free SQL).' }}</p>
+<div class="tbox"><table class="t"><thead><tr><th>Column</th><th>Type</th><th></th></tr></thead><tbody>{% for col in obj.columns %}<tr><td class="mono">{{ col.name }}</td><td>{{ col.type }}</td><td class="warn">{{ 'personal data - never returned' if col.pii }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% else %}<div class="pb muted" style="padding-top:14px">Discover the source first.</div>{% endif %}
+</section>
+</div>
+
+{% else %}
+<section class="panel"><div class="ph"><h2>Changes to publish</h2><span class="note">{{ pending_here|length }} pending</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Tool</th><th>State</th><th>Version</th><th>Risk</th><th>Profiles</th><th>Check</th></tr></thead><tbody>
+{% for r in review %}<tr><td class="mono"><a href="/tools/{{ r.t.name }}">{{ r.t.name }}</a></td><td class="{{ {'published':'ok','changed':'warn','draft':'warn'}[r.t.state] }}">{{ r.t.state }}</td><td>v{{ r.t.version }}{{ ' + draft' if r.t.changed and r.t.published }}</td><td class="{{ r.t.risk }}">{{ r.t.risk }}</td><td class="muted">{{ r.t.profiles|join(', ') or '–' }}</td><td class="{{ r.token }} wrap">{{ r.check }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">No tools from this source yet - expose objects in step 3</td></tr>{% endfor %}</tbody></table></div>
+<div class="pb row" style="padding-top:12px">{% if can_edit and pending_here %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="back" value="/sources/{{ s.id }}?step=3">{% for t in pending_here %}<input type="hidden" name="tool" value="{{ t.name }}">{% endfor %}<button class="btn primary">{{ icon("upload") }}Publish {{ pending_here|length }} tool{{ 's' if pending_here|length != 1 }}</button></form>{% endif %}
+<span class="muted small" style="flex:1 1 300px">Publishing makes the tools live for their profiles and sends tools/list_changed to connected clients. Versions are kept in each tool's history.</span></div></section>
+<section class="panel"><div class="ph"><h2>History</h2></div><div class="tbox"><table class="t"><thead><tr><th>Time</th><th>Tool</th><th>Version</th><th>By</th><th>Note</th></tr></thead><tbody>
+{% for hh, name in hist %}<tr><td class="muted">{{ hh.time[:16]|replace('T',' ') }}</td><td class="mono">{{ name }}</td><td>v{{ hh.version }}</td><td>{{ hh.user }}</td><td class="muted">{{ hh.note }}</td></tr>{% else %}<tr><td colspan="5" class="muted">Nothing published yet</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endif %}
+{% endblock %}
+{% block side %}
+<aside class="side" aria-label="Source">
+<div class="sh"><div class="title">{{ s.name }}</div><div class="muted small">{{ nav_sources|selectattr('id','equalto',s.id)|map(attribute='type')|first }} source · read-only</div></div>
+<div class="sec">Source</div>
+<dl class="kv"><dt>Id</dt><dd class="mono">{{ s.id }}</dd><dt>ISA-95 context</dt><dd>{{ s.isa95 or '–' }}</dd><dt>Enabled</dt><dd>{{ 'Yes' if s.enabled else 'No' }}</dd><dt>Discovered</dt><dd>{{ s.objects|length }} objects · {{ s.items|length }} items</dd></dl>
+<div class="sec">Status</div>
+<dl class="kv"><dt>State</dt><dd class="{{ state_token.get(h.state) }}">{{ h.state }}</dd><dt>Latency</dt><dd>{{ (h.latency_ms|round|int ~ ' ms') if h.latency_ms else '–' }}</dd><dt>Message</dt><dd>{{ h.message or '–' }}</dd></dl>
+{% if cur and step == 2 %}<div class="sec">Selected tool</div>
+<dl class="kv"><dt>Name</dt><dd class="mono">{{ cur.name }}</dd><dt>Risk class</dt><dd class="{{ cur.risk }}">{{ cur.risk }} · {{ RISK_INFO[cur.risk][0] }}</dd><dt>State</dt><dd>{{ cur.state }} (v{{ cur.version }})</dd><dt>Profiles</dt><dd>{{ cur.profiles|join(', ') or '–' }}</dd>
+<dt>Max rows</dt><dd>{{ project.limits.max_rows }}</dd><dt>Max date range</dt><dd>{{ project.limits.max_days }} days</dd><dt>Timeout</dt><dd>{{ '%g'|format(project.limits.timeout_s) }} s</dd></dl>{% endif %}
+</aside>
+{% endblock %}

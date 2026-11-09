@@ -1,0 +1,62 @@
+{% from "_macros.html" import csrf_field, post_button with context %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf }}">
+<title>{% block title %}{% endblock %} · MCX Adapter</title>
+<link rel="stylesheet" href="/static/mcx.css">
+<link rel="icon" href="/static/mcx.svg">
+<script src="/static/mcx.js"></script>
+</head>
+<body>
+<div class="app">
+<header class="top">
+<a class="brand" href="/"><span>MCX</span> Adapter</a>
+<span class="proj">{{ project.name }}{% if project.site %} · {{ project.site }}{% endif %}</span>
+<form class="search" action="/tools" method="get" role="search"><label class="sr" for="q">Search tools</label>
+<input id="q" name="q" type="search" placeholder="Search tools"></form>
+<div class="grow"></div>
+<span id="mcp-chip" class="chip {{ 's-ok' if server.running else 's-bad' }}"><span class="dot {{ 'ok' if server.running else 'bad' }}"></span> {{ 'MCP ready' if server.running else 'MCP stopped' }}</span>
+{% if can_edit %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="back" value="{{ request.url.path }}">
+<button class="btn primary" {% if not pending %}disabled{% endif %}>{{ icon("upload") }}Publish <span id="pub-count">{% if pending %}({{ pending }}){% endif %}</span></button></form>{% endif %}
+{% if alarms %}<a class="btn ghost" href="/#alarms">{{ icon("bell") }}{{ alarms|length }}</a>{% endif %}
+<button class="btn ghost" id="theme-btn" type="button">{{ icon("contrast") }} Dark</button>
+<a class="btn ghost" href="/account" title="Account">{{ icon("user") }}{{ user.username }} · {{ user.role_text }}</a>
+<form method="post" action="/logout" class="inline">{{ csrf_field() }}<button class="btn ghost" aria-label="Sign out">{{ icon("log-out") }}</button></form>
+</header>
+<div class="body">
+<nav class="nav" aria-label="Adapter">
+<a href="/" class="{{ 'on' if active == 'overview' }}">{{ icon("house") }}Overview</a>
+<a href="{{ '/sources/new' if can_edit else '/' }}" class="{{ 'on' if active == 'sources' }}">{{ icon("plug") }}Sources<span class="cnt">{{ online }} / {{ n_sources }}</span></a>
+<div class="sub">
+{% for s in nav_sources %}<a href="/sources/{{ s.id }}" class="{{ 'on' if active == 'source:' ~ s.id }}" title="{{ s.msg or s.state }}"><span class="dot {{ s.token }}"></span>{{ s.type }} · {{ s.name }}</a>{% endfor %}
+{% if can_edit %}<a href="/sources/new" class="muted">{{ icon("plus", 14) }}Add source</a>{% endif %}
+</div>
+<a href="/model" class="{{ 'on' if active == 'model' }}">{{ icon("layers") }}Plant model · ISA-95</a>
+<a href="/tools" class="{{ 'on' if active == 'tools' }}">{{ icon("wrench") }}Tools<span class="cnt">{{ summary.tools }}</span></a>
+<a href="/profiles" class="{{ 'on' if active.startswith('profile') }}">{{ icon("list") }}Tool profiles<span class="cnt">{{ project.profiles|length }}</span></a>
+<div class="sub">{% for x in project.profiles %}<a class="mono {{ 'on' if active == 'profile:' ~ x.id }}" href="/profiles?p={{ x.id }}">{{ x.id }} · {{ project.endpoint.path }}/{{ x.id }}</a>{% endfor %}</div>
+<a href="/endpoint" class="{{ 'on' if active == 'endpoint' }}">{{ icon("arrow-left-right") }}MCP endpoint<span class="cnt">:{{ project.endpoint.port }}</span></a>
+<a href="/safety" class="{{ 'on' if active == 'safety' }}">{{ icon("shield") }}Safety &amp; limits</a>
+<a href="/audit" class="{{ 'on' if active == 'audit' }}">{{ icon("file-text") }}Audit log</a>
+<hr>
+{% if can_admin %}<a href="/users" class="{{ 'on' if active == 'users' }}">{{ icon("users") }}Users &amp; roles</a>{% endif %}
+<a href="/licence" class="{{ 'on' if active == 'licence' }}">{{ icon("key-round") }}Licence<span class="cnt">{{ project.licence.edition }}</span></a>
+</nav>
+<main>
+{% if flash %}<div class="panel banner secret" role="status"><span><b>Shown once - copy it now.</b> Only a hash is stored.<br><code id="flash-secret">{{ flash.split(': ', 1)[-1] }}</code> <span class="muted small">{{ flash.split(': ', 1)[0] }}</span></span><button class="btn" type="button" data-copy="flash-secret">{{ icon("copy") }}Copy</button></div>{% endif %}
+{% if ok %}<div class="panel banner ok" role="status"><span>{{ ok }}</span></div>{% endif %}
+{% if err %}<div class="panel banner bad" role="alert"><span>{{ err }}</span></div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+{% block side %}{% endblock %}
+</div>
+<footer class="foot">
+<span class="{{ 'ok' if server.running else 'warn' }}">MCP server {{ 'ready' if server.running else 'stopped' }} · {{ online }}/{{ n_sources }} sources · {{ summary.tools }} tools · {{ project.profiles|length }} profiles · read-only</span>
+{% for a in alarms if a.level != 'info' %}{% if loop.first %}<span class="warn" style="margin-left:auto">▲ {{ a.where }}: {{ a.text[:70] }}</span>{% endif %}{% endfor %}
+<span id="live" class="muted" style="margin-left:auto">{{ summary.clients }} clients · {{ summary.calls_today|fmt }} calls today · {{ summary.blocked_today }} blocked</span>
+</footer>
+</div>
+</body>
+</html>

@@ -1,73 +1,58 @@
-# NX Logger
+# MCX Adapter
 
-Data logger for numbers from industrial devices - in the style of Yokogawa GA10, with the
-connectivity of a SCADA (Genesis64, FUXA):
+"Kepware for AI": MCX Adapter connects to manufacturing data sources and serves them as **safe,
+standard MCP tools**. It works behind any MCP gateway or AI platform (IBM ContextForge, Docker MCP
+Gateway, cloud AI gateways, Microsoft Copilot Studio) or directly with Claude. The customer keeps
+their gateway and LLM; the adapter gives it plant data, and is **safe on its own**.
 
-- **Connectivity:** devices and tags from **Modbus TCP**, **Modbus RTU**, **MQTT**
-  (JSON / plain values, or ESP32 waveform packets), **OPC UA** (client with address-space
-  browser) and a built-in **simulator**. Tags in groups, live value / quality / time,
-  write to RW tags, tag list import / export (CSV). OPC DA is planned.
-- **Views:** free-form screens with a snap grid - drag components to move them, the corner
-  grip to resize: header, trend, FFT / spectrogram / histogram, number, gauge, LED, tag table,
-  statistics table, alarm table.
-- **Statistics** over windows the app buffers itself: seconds, minutes, hours or a number
-  of samples, moving or block (mean of each full minute ...).
-- **Workbench editing (Genesis64 style):** double-click a device, tag, group, alarm,
-  variable or logging profile in the Project tree and it opens as a closable editor tab
-  (Full Path header, collapsible sections, Apply / Refresh / Close / New... / Apply & Close /
-  Apply & New...). Pop-ups are only used for actions ([docs/ui-guidelines.md](docs/ui-guidelines.md)). The **Tags** branch of
-  the tree manages tags and groups; the **Properties panel** edits the selection quickly.
-- **Alarms:** 4 levels per tag (H, L, difference, rate of change, data loss) with
-  hysteresis, on-delay, ACK / latch, alarm log, notifications (popup, REST, MQTT).
-- **Recording:** session folders with CSV (and raw `.wpk` for waveforms) plus a
-  `project.json` index for the NX Viewer ([docs/recording-format.md](docs/recording-format.md));
-  statistic profiles (one row per interval); 24/7 AI/ML data log.
+- **Sources:** SQL Server / PostgreSQL / MySQL / SQLite tables and views, OPC UA (GENESIS64 and other
+  SCADA servers), Modbus TCP / RTU, MQTT, CSV / Excel files, REST / JSON APIs, a plant simulator.
+- **Model:** every live item gets an ISA-95 path (site / area / line / machine), unit and limits.
+- **Tools:** generic `browse_model`, `list_assets`, `read_tag`, `query_history` over the model;
+  curated tools (`get_oee`, `get_downtime_pareto` ...) built from views with typed parameters -
+  never free SQL, never protocol writes. Draft -> test call -> publish, with version history.
+- **Answers:** one envelope with unit, timestamp, quality, ISA-95 path, source and `truncated`;
+  aggregated on the server, plant time zone.
+- **Safety:** risk classes R0-R5 as MCP annotations (v1 serves R0-R3, R2 off until enabled),
+  allow-list (new objects start hidden), personal-data columns never returned, row / date-range /
+  timeout / rate limits, hash-chained audit log (syslog export).
+- **Edge:** MCP over Streamable HTTP and stdio, API keys (Bearer), tool profiles (`/mcp/eng`,
+  `/mcp/qe` ...), `tools/list_changed` on publish, `/health` and Prometheus `/metrics`.
+- **Web console** (`mcx_web`, the main UI): connect -> discover -> expose -> test -> publish, tool
+  profiles with "Connect a client" steps per platform, safety, audit, users & roles (local accounts:
+  Admin / Engineer / Viewer), Spex theme light / dark, works offline.
+- **MCX Studio** (`mcx_studio`, optional): the same setup as a PySide6 desktop app.
 
-![NX Logger](docs/screenshots/nxlogger.png)
+Scope and roadmap: *MCX Adapter v1: scope and design*. Formerly this repository held NX Logger
+(tag `v6-mqdaq`, branch `nx-connectivity-categories`); MCX Studio keeps its theme and layout.
 
 ## Install and run
 
 ```bash
 pip install -e ".[dev]"
-python -m nxlogger            # the logger
-python -m nxlogger.sim        # ESP32 waveform simulator over MQTT (Connect, then Start)
+python -m mcx_web --demo                          # adapter + web console http://127.0.0.1:8810 (demo plant)
+python -m mcx_web PROJECT.mcx --host 0.0.0.0      # your project, reachable on the plant network
+python -m mcx_studio                              # optional desktop app
+python -m mcx_core demo                           # or: create the demo project (prints API keys once)
+python -m mcx_core serve "~/Documents/MCX Adapter/Demo/Plant adapter.mcx"   # headless service
+python -m mcx_core stdio PROJECT.mcx --profile eng                        # Claude Desktop (stdio)
+python -m mcx_core.sim.factory_energy             # 11 Modbus power meters on 127.0.0.1:5020 (demo)
+python -m pytest -q                               # tests (local Modbus / OPC UA / HTTP servers)
 ```
 
-A new project opens with a **Simulator** device and an *Overview* view: press
-**Connect** (Ctrl+K) to see live data. Add your own devices in **Connectivity**
-(Add ▾, Import / Export JSON or CSV), their tags in **Tags** - see [docs/connectivity.md](docs/connectivity.md) for the connectors,
-address formats and the tag list CSV. Projects are `.nxl` (JSON); `.sxl` and `.mqdaq`
-files open and are converted.
+Connect a client to `http://127.0.0.1:8811/mcp/<profile>` with `Authorization: Bearer <key>`;
+the web console's Tool profiles > Connect a client gives the settings for Copilot Studio, ContextForge,
+Docker MCP Gateway and Claude Desktop. See [docs/](docs/).
 
-MQTT defaults to the public `broker.emqx.io` (anyone can read it - use your own topic
-names and never send real data there). Defaults are in `config.ini`
-([docs/config.md](docs/config.md)).
-
-## Development
+## Layout
 
 ```
-src/nxlogger/
-  core/       no Qt: tags (devices, tags, connector schemas), project, view_model,
-              stat_buffer, ring, recording, ml_log, alarm_rules, channel_math, analysis,
-              variables, wavepacket
-  comms/      drivers/ (sim, modbus, mqtt, opcua - one thread per device), manager.py,
-              mqtt_client.py (Qt wrapper, used by the simulator)
-  ui/         main_window, app, icons, dialogs/, widgets/ (connectivity, property_grid,
-              properties, views, alarm_panel, variables_panel), theme/
-  sim/        waveform publisher
-  resources/  config.default.ini, icons (app + Lucide UI icons)
-tests/        pytest - no broker or hardware (Modbus / OPC UA tests start local servers)
-packaging/    PyInstaller spec, Inno Setup script, build.ps1
-docs/         connectivity, recording format, packet format, config keys, screenshots
-tools/        mqtt_check.py - broker connectivity check
+src/mcx_core/     no Qt: config (.mcx YAML), adapters/, model (ISA-95), tools, safety, audit,
+                  mcp (Streamable HTTP + stdio), runtime, demo, sim/factory_energy
+src/mcx_web/      web console: app (FastAPI routes), users (local accounts, roles, sessions),
+                  templates/ (Jinja2), static/ (Spex theme CSS, small JS)
+src/mcx_studio/   PySide6 (optional): main_window, widgets/ (overview, source_page, profiles_page, pages,
+                  property_grid, common), dialogs/, theme/ (Spex ui_kit, app_style), icons
+tests/            pytest
+Dockerfile        adapter + web console image
 ```
-
-```bash
-python -m pytest -q                 # tests
-python -m pyflakes src tests        # lint
-.\packaging\build.ps1               # EXE + installer (Windows, needs Inno Setup 6 for the installer)
-```
-
-Working with Claude Code: `CLAUDE.md` and the `nxlogger-dev` skill in `.claude/skills/`.
-Earlier versions: SX Logger / MQDAQ (MQTT waveform logger); the last flat-file MQDAQ
-version is git tag `v6-mqdaq`.

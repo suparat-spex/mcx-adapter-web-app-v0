@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}MCP endpoint{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / MCP endpoint</div>
+<div class="head"><div><h1>MCP endpoint</h1><p>Standard MCP server · <span class="mono">{{ mcp_url }}</span> · <span class="{{ 'ok' if server.running else 'bad' }}">{{ 'running · ' ~ sessions ~ ' sessions' if server.running else 'stopped' ~ (': ' ~ server.error if server.error else '') }}</span></p></div>
+{% if can_admin %}{{ post_button("/endpoint/restart", "Restart MCP server", "btn", "refresh", "Restart the MCP server? Connected clients reconnect.") }}{% endif %}
+<button class="btn" type="button" data-copy="ep-url">{{ icon("copy") }}Copy URL</button><span id="ep-url" class="sr">{{ mcp_url }}</span></div>
+{% if not can_admin %}<div class="panel banner"><span>Only an admin can change the endpoint and API keys.</span></div>{% endif %}
+<div class="grid2">
+<section class="panel"><div class="ph"><h2>Server</h2><span class="note">applies after a restart</span></div>
+<form method="post" action="/endpoint" class="pb">{{ csrf_field() }}{% set d = 'disabled' if not can_admin else '' %}
+<div class="form">
+<label for="e-host">Listen address</label><input id="e-host" name="host" value="{{ ep.host }}" {{ d }}>
+<label for="e-port">Port</label><input id="e-port" name="port" value="{{ ep.port }}" inputmode="numeric" {{ d }}>
+<label for="e-path">Path</label><input id="e-path" name="path" value="{{ ep.path }}" {{ d }}>
+<label for="e-pub">Public URL</label><input id="e-pub" name="public_url" value="{{ ep.public_url }}" placeholder="https://plant-mcx:8811/mcp (behind a proxy)" {{ d }}>
+<label for="e-cert">TLS certificate (PEM)</label><input id="e-cert" name="tls_cert" value="{{ ep.tls_cert }}" {{ d }}>
+<label for="e-key">TLS key (PEM)</label><input id="e-key" name="tls_key" value="{{ ep.tls_key }}" {{ d }}>
+<span class="muted">Transports</span><span class="row"><label class="row" style="gap:6px;color:var(--text)"><input type="checkbox" name="http" {{ 'checked' if ep.http }} {{ d }}>Streamable HTTP</label><label class="row" style="gap:6px;color:var(--text)"><input type="checkbox" name="stdio" {{ 'checked' if ep.stdio }} {{ d }}>stdio</label></span>
+<label for="e-orig">Allowed browser origins</label><textarea id="e-orig" name="origins" rows="2" placeholder="one per line (loopback always allowed)" {{ d }}>{{ ep.allowed_origins|join('\n') }}</textarea>
+<label for="e-mode">Client authentication</label><select id="e-mode" name="mode" {{ d }}><option value="api_key" {{ 'selected' if auth.mode == 'api_key' }}>API keys (Bearer token)</option><option value="none" {{ 'selected' if auth.mode == 'none' }}>None - local clients only</option><option value="oauth" {{ 'selected' if auth.mode == 'oauth' }}>OAuth 2.1 (planned)</option></select>
+<label for="e-sys">Audit to syslog (SIEM)</label><input id="e-sys" name="syslog_host" value="{{ audit_cfg.syslog_host }}" placeholder="host (empty = off)" {{ d }}>
+</div>{% if can_admin %}<div class="row" style="margin-top:14px"><button class="btn primary">Save</button></div>{% endif %}</form></section>
+<section class="panel"><div class="ph"><h2>API keys</h2><span class="note">only a SHA-256 hash is stored · shown once</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Key</th><th>Profile</th><th>Client</th><th>Secret</th><th>Created</th>{% if can_admin %}<th></th>{% endif %}</tr></thead><tbody>
+{% for k in auth.api_keys %}<tr><td class="mono">{{ k.id }}</td><td class="mono">{{ k.profile or 'any' }}</td><td>{{ k.client or k.name }}</td><td class="mono">••••{{ k.last4 }}</td><td class="muted">{{ k.created[:10] }}</td>
+{% if can_admin %}<td class="row" style="flex-wrap:nowrap">{{ post_button("/keys/" ~ k.id ~ "/rotate", "Rotate", "btn sm", None, "Rotate " ~ k.id ~ "? The old secret stops working at once.") }}{{ post_button("/keys/" ~ k.id ~ "/delete", "Delete", "btn sm danger", None, "Delete " ~ k.id ~ "? Clients using it are refused at once.") }}</td>{% endif %}</tr>
+{% else %}<tr><td colspan="6" class="muted">No keys yet</td></tr>{% endfor %}</tbody></table></div>
+{% if can_admin %}<form method="post" action="/keys" class="pb row" style="padding-top:12px">{{ csrf_field() }}<label class="sr" for="k-prof">Profile</label><select id="k-prof" name="profile">{% for x in project.profiles %}<option value="{{ x.id }}">{{ x.id }}</option>{% endfor %}<option value="">any profile</option></select>
+<label class="sr" for="k-client">Client</label><input id="k-client" name="client" placeholder="Client / platform"><button class="btn primary">{{ icon("key-round") }}New key</button></form>{% endif %}
+<p class="pb muted small" style="margin:0">Clients send it as <code>Authorization: Bearer &lt;key&gt;</code> or <code>X-API-Key</code>. A key bound to a profile works only on that profile's endpoint.</p></section>
+</div>
+{% endblock %}

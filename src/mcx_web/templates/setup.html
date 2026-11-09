@@ -1,0 +1,12 @@
+{% extends "_auth.html" %}{% block title %}First admin{% endblock %}
+{% block content %}
+<div><h2>Create the first admin</h2><p class="muted small" style="margin:4px 0 0">No accounts exist yet on this server. This admin can then add engineers and viewers.</p></div>
+<form method="post" action="/setup" style="display:flex;flex-direction:column;gap:12px">
+<label>User name<input name="username" autocomplete="username" required autofocus></label>
+<label>Full name<input name="name" autocomplete="name"></label>
+<label>Password <span class="muted small">at least 10 characters, letters and digits</span><input name="password" type="password" autocomplete="new-password" required></label>
+<label>Password again<input name="password2" type="password" autocomplete="new-password" required></label>
+{% if err %}<div class="err" role="alert">{{ err }}</div>{% endif %}
+<button class="btn primary">Create admin and sign in</button>
+</form>
+{% endblock %}

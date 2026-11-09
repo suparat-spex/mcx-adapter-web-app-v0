@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Licence{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Licence</div>
+<div class="head"><div><h1>Licence</h1><p>{{ project.sources|length }} of {{ lic.max_sources or 'unlimited' }} sources used · risk up to {{ lic.max_risk }} · tool profiles {{ 'included' if lic.profiles else 'not included' }}</p></div></div>
+<div class="grid2">
+<section class="panel"><div class="ph"><h2>Edition</h2></div>
+<form method="post" action="/licence" class="pb">{{ csrf_field() }}{% set d = 'disabled' if not can_admin else '' %}<div class="form">
+<label for="ed">Edition</label><select id="ed" name="edition" {{ d }}>{% for e in editions %}<option {{ 'selected' if e == lic.edition }}>{{ e }}</option>{% endfor %}</select>
+<label for="ho">Licensed to</label><input id="ho" name="holder" value="{{ lic.holder }}" {{ d }}>
+<label for="ex">Expires</label><input id="ex" name="expires" value="{{ lic.expires }}" placeholder="YYYY-MM-DD" {{ d }}>
+</div>{% if can_admin %}<div class="row" style="margin-top:14px"><button class="btn primary">Save</button></div>{% endif %}</form></section>
+<section class="panel"><div class="ph"><h2>Editions</h2><span class="note">per data source connection</span></div>
+<div class="tbox"><table class="t"><thead><tr><th>Edition</th><th>Sources</th><th>Risk classes</th><th>Tool profiles</th></tr></thead><tbody>
+{% for e, v in editions.items() %}<tr class="{{ 'sel' if e == lic.edition }}"><td><b>{{ e }}</b></td><td>{{ v[0] or 'unlimited' }}</td><td>R0–{{ v[1] }}</td><td>{{ 'yes' if v[2] else '–' }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="pb muted small" style="margin:0;padding-top:10px">An MCX Adapter licence credits toward MCX Gateway. A signed, machine-bound licence file comes with the installer work.</p></section>
+</div>
+{% endblock %}

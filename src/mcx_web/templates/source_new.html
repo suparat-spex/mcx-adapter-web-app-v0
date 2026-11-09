@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block title %}Add source{% endblock %}
+{% block content %}
+<div class="crumb">Sources / Add</div>
+<div class="head"><div><h1>Add source</h1><p>Connect a data source. MCX Adapter only reads from it - use a read-only account.</p></div></div>
+<form method="post" action="/sources/new" class="col">{{ csrf_field() }}
+{% for cat, items in cats.items() %}<section class="panel"><div class="ph"><h2>{{ cat }}</h2></div><div class="pb chips">
+{% for it in items %}<label class="btn" style="gap:10px"><input type="radio" name="type" value="{{ it.type }}" required>{{ icon(it.icon) }}{{ it.label }}</label>{% endfor %}
+</div></section>{% endfor %}
+<section class="panel"><div class="ph"><h2>Later in the roadmap</h2></div><div class="pb chips">{% for x in planned %}<span class="chip s-info">{{ x }}</span>{% endfor %}</div></section>
+<div class="panel pb" style="padding-top:14px"><div class="form"><label for="name">Name</label><input id="name" name="name" required placeholder="e.g. smc_demo, GENESIS64, power meters"></div></div>
+<div class="row"><button class="btn primary">{{ icon("plus") }}Add source</button><a class="btn" href="/">Cancel</a></div>
+</form>
+{% endblock %}

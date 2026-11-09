@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}Plant model{% endblock %}
+{% macro node(n, depth) %}
+<li><details {{ 'open' if depth < 2 }}><summary><b>{{ n.name }}</b> <span class="muted small">{{ n.level }}{% if n.items %} · {{ n.items|length }} tags{% endif %}</span></summary>
+<ul>{% for c in n.children.values()|sort(attribute='name') %}{{ node(c, depth + 1) }}{% endfor %}
+{% for sid, it in n.items %}<li class="tag"><span class="mono" style="min-width:150px">{{ it.name }}</span><span>{{ it.unit }}</span><span class="muted">{{ '' if it.lo is none and it.hi is none else (it.lo if it.lo is not none else '') ~ ' … ' ~ (it.hi if it.hi is not none else '') }}</span><a href="/sources/{{ sid }}?step=2&amp;obj={{ it.address|urlencode }}" class="small">{{ sid }}</a><span class="mono muted small">{{ it.address }}</span></li>{% endfor %}</ul></details></li>
+{% endmacro %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Plant model</div>
+<div class="head"><div><h1>Plant model · ISA-95</h1><p>Site / area / line / machine - what browse_model, read_tag and query_history see · {{ n_tags|fmt }} tags · {{ n_eq }} machines</p></div></div>
+<section class="panel tree" style="padding:12px 16px"><ul>{% for c in root.children.values()|sort(attribute='name') %}{{ node(c, 0) }}{% else %}<li class="muted">No tags exposed yet - discover a tag source (OPC UA, Modbus, MQTT, simulator).</li>{% endfor %}</ul></section>
+{% endblock %}

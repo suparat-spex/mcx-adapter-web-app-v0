@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% from "_macros.html" import kpi with context %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Audit log</div>
+<div class="head"><div><h1>Audit log</h1><p>One JSON line per call · hash-chained · <span class="mono">{{ folder }}</span></p></div>
+{{ post_button("/audit/verify", "Verify chain", "btn", "shield-check") }}{% if can_edit %}<a class="btn" href="/audit/export.csv">{{ icon("download") }}Export CSV</a>{% endif %}</div>
+<div class="kpis">{{ kpi("Calls today", today|length|fmt, summary.clients ~ " clients", "accent") }}{{ kpi("Blocked", blocked, "range, rows, rate, profile") }}{{ kpi("Errors", errors, "source errors / timeouts") }}
+{{ kpi("Hash chain", ('Verified' if chain[0] else 'BROKEN') if chain else 'Not checked', chain[2] if chain else 'press Verify chain', ('ok' if chain[0] else 'bad') if chain else '') }}</div>
+<section class="panel">
+<form method="get" action="/audit" class="ph"><label class="sr" for="aq">Filter</label><input id="aq" name="q" value="{{ q }}" placeholder="Filter by tool, client or argument" style="flex:1 1 220px">
+<label class="row" style="gap:6px"><span class="muted">Show</span><select name="kind" data-autosubmit><option value="calls" {{ 'selected' if kind == 'calls' }}>MCP calls</option><option value="admin" {{ 'selected' if kind == 'admin' }}>Console changes &amp; sign-ins</option><option value="all" {{ 'selected' if kind == 'all' }}>Everything</option></select></label>
+<label class="row" style="gap:6px"><span class="muted">Result</span><select name="result" data-autosubmit><option value="">All</option>{% for r in ['ok','blocked','truncated','error'] %}<option {{ 'selected' if result == r }}>{{ r }}</option>{% endfor %}</select></label>
+<button class="btn">Filter</button></form>
+<div class="tbox"><table class="t"><thead><tr><th>Time</th><th>Client / user</th><th>Profile</th><th>Via</th><th>Tool / action</th><th>Arguments</th><th class="r">Rows</th><th class="r">ms</th><th>Result</th></tr></thead><tbody>
+{% for r in recs %}<tr class="link {{ 'sel' if sel and sel.seq == r.seq }}" data-href="/audit?seq={{ r.seq }}&amp;kind={{ kind }}&amp;result={{ result }}&amp;q={{ q|urlencode }}&amp;page={{ page_n }}">
+<td class="muted">{{ (r.time or '')[:19]|replace('T',' ') }}</td><td>{{ r.client }}</td><td class="mono">{{ r.profile or '–' }}</td><td class="muted">{{ r.via }}</td><td class="mono">{{ r.tool }}</td>
+<td class="mono muted cut" title="{{ r.args|tojson }}">{{ r.args|tojson }}</td><td class="r">{{ '–' if r.result == 'blocked' else r.rows }}</td><td class="r">{{ r.ms }}</td><td class="{{ result_token.get(r.result, 'muted') }}">{{ r.result }}{{ ' (test)' if r.test }}</td></tr>
+{% else %}<tr><td colspan="9" class="muted">No records</td></tr>{% endfor %}</tbody></table></div>
+<div class="ph"><span class="muted">{{ total|fmt }} records · page {{ page_n }} of {{ pages }}</span><span class="note row">
+{% if page_n > 1 %}<a class="btn sm" href="/audit?page={{ page_n - 1 }}&amp;kind={{ kind }}&amp;result={{ result }}&amp;q={{ q|urlencode }}">Previous</a>{% endif %}
+{% if page_n < pages %}<a class="btn sm" href="/audit?page={{ page_n + 1 }}&amp;kind={{ kind }}&amp;result={{ result }}&amp;q={{ q|urlencode }}">Next</a>{% endif %}</span></div>
+</section>
+{% endblock %}
+{% block side %}{% if sel %}
+<aside class="side" aria-label="Record">
+<div class="sh"><div class="title">Record #{{ sel.seq }}</div><div class="muted small">{{ sel.tool }} · {{ sel.result }}</div></div>
+<div class="sec">JSON line</div><div class="pb" style="padding-top:10px"><pre class="code">{{ sel_json }}</pre></div>
+{% if sel.error %}<div class="sec">Why</div><p class="pb" style="padding-top:10px;margin:0">{{ sel.error }}</p>{% endif %}
+</aside>{% endif %}{% endblock %}

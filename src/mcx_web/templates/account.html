@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block title %}Account{% endblock %}
+{% block content %}
+<div class="crumb">Account</div>
+<div class="head"><div><h1>{{ user.name or user.username }}</h1><p>{{ user.username }} · {{ user.role_text }} - {{ role_help[user.role] }}</p></div></div>
+<section class="panel" style="max-width:620px"><div class="ph"><h2>Change password</h2></div>
+<form method="post" action="/account/password" class="pb">{{ csrf_field() }}<div class="form">
+<label for="a1">Current password</label><input id="a1" type="password" name="current" autocomplete="current-password" required>
+<label for="a2">New password</label><input id="a2" type="password" name="new" autocomplete="new-password" required>
+<label for="a3">New password again</label><input id="a3" type="password" name="new2" autocomplete="new-password" required>
+</div><div class="row" style="margin-top:14px"><button class="btn primary">Change password</button><span class="muted small">Your other sessions are signed out.</span></div></form></section>
+{% endblock %}

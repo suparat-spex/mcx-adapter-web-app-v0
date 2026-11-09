@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{% endblock %} · MCX Adapter</title>
+<link rel="stylesheet" href="/static/mcx.css">
+<link rel="icon" href="/static/mcx.svg">
+<script src="/static/mcx.js"></script>
+</head>
+<body>
+<div class="auth">
+<div class="row" style="justify-content:flex-end;padding:10px 16px"><button class="btn ghost" id="theme-btn" type="button">{{ icon("contrast") }} Dark</button></div>
+<div class="center"><div class="card">
+<div><div style="font-size:24px;font-weight:600"><span style="color:var(--accent-ink)">MCX</span> Adapter</div>
+<div class="muted">{{ project.name }}{% if project.site %} · {{ project.site }}{% endif %}</div></div>
+{% block content %}{% endblock %}
+</div></div>
+<footer class="foot muted"><span>MCX Adapter {{ version }} · SPEX</span><span style="margin-left:auto">Local accounts on this server</span></footer>
+</div>
+</body>
+</html>

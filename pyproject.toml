@@ -3,44 +3,48 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nx-logger"
-description = "NX Logger - data logger for Modbus TCP / RTU, MQTT and OPC UA tags: views, alarms, statistics, recording"
+name = "mcx-adapter"
+description = "MCX Adapter - plant data (SQL, OPC UA, Modbus, MQTT, Excel, REST) as safe, standard MCP tools, with a web console"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["version"]
 dependencies = [
-    "PySide6>=6.5",
-    "pyqtgraph>=0.13",
-    "paho-mqtt>=2.0",
-    "numpy>=1.24",
-    "zstandard>=0.22; python_version < '3.14'",   # AI/ML data log .zst (3.14+ has compression.zstd)
-    "pymodbus>=3.6",                              # Modbus TCP / RTU connector
+    "PyYAML>=6.0",                                # project file (.mcx)
+    "pymodbus>=3.6",                              # Modbus TCP / RTU sources
     "pyserial>=3.5",                              # Modbus RTU serial ports
-    "asyncua>=1.1",                               # OPC UA client connector
+    "asyncua>=1.1",                               # OPC UA client sources
+    "paho-mqtt>=2.0",                             # MQTT sources
+    "openpyxl>=3.1",                              # Excel sources
+    "fastapi>=0.110",                             # web console
+    "uvicorn>=0.29",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyflakes>=3"]
-build = ["pyinstaller>=6.10"]
-
-[project.gui-scripts]
-nxlogger = "nxlogger.ui.app:main"
-nxlogger-sim = "nxlogger.sim.publisher:main"
-nxlogger-wtp-gui = "nxlogger.sim.water_plant_gui:main"
-nxlogger-energy-gui = "nxlogger.sim.factory_energy_gui:main"
+studio = ["PySide6>=6.5"]                         # MCX Studio (optional desktop setup UI)
+sqlserver = ["pyodbc>=5"]
+postgres = ["psycopg2-binary>=2.9"]
+mysql = ["pymysql>=1.1"]
+dev = ["PySide6>=6.5", "pytest>=8", "pyflakes>=3", "mcp>=1.10", "httpx>=0.27"]   # mcp: official SDK as a test client
 
 [project.scripts]
-nxlogger-wtp = "nxlogger.sim.water_plant:main"   # water treatment plant simulator (MQTT)
-nxlogger-energy = "nxlogger.sim.factory_energy:main"   # factory energy simulator (Modbus TCP)
+mcx-web = "mcx_web.__main__:main"                # adapter + web console (the main way to run it)
+mcx-adapter = "mcx_core.__main__:main"           # serve / stdio / demo / key / audit / tools (headless)
+mcx-energy-sim = "mcx_core.sim.factory_energy:main"
+
+[project.gui-scripts]
+mcx-studio = "mcx_studio.app:main"
 
 [tool.setuptools.dynamic]
-version = { attr = "nxlogger.__version__" }
+version = { attr = "mcx_core.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-nxlogger = ["resources/*.ini", "resources/icons/*/*", "ui/theme/DESIGN.md"]
+mcx_studio = ["resources/icons/*/*", "theme/DESIGN.md"]
+mcx_web = ["templates/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
