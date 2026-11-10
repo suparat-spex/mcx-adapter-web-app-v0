@@ -15,6 +15,8 @@ Every result uses one envelope (`envelope`), so any LLM can read and cite it:
 from __future__ import annotations
 
 import datetime as dt
+import decimal
+import math
 
 from mcx_core.adapters.base import Query
 from mcx_core.config import Measure, ToolDef, ToolParam
@@ -178,12 +180,20 @@ def rows_as_dicts(cols, rows, digits: int = 4) -> list[dict]:
     for r in rows:
         d = {}
         for c, v in zip(cols, r):
-            if isinstance(v, float):
-                v = round(v, digits)
-            elif isinstance(v, (dt.date, dt.datetime)):
+            if isinstance(v, decimal.Decimal):       # SQL Server / Postgres decimal, numeric, money
+                v = int(v) if v == v.to_integral_value() and abs(v) < 2 ** 53 else float(v)
+            if isinstance(v, bool) or v is None or isinstance(v, (int, str)):
+                pass
+            elif isinstance(v, float):
+                v = round(v, digits) if math.isfinite(v) else None
+            elif isinstance(v, (dt.date, dt.datetime, dt.time)):
                 v = v.isoformat()
-            elif isinstance(v, bytes):
+            elif isinstance(v, dt.timedelta):
+                v = v.total_seconds()
+            elif isinstance(v, (bytes, bytearray, memoryview)):
                 v = None
+            else:                                    # uuid, ... : always JSON-safe text
+                v = str(v)
             d[c] = v
         out.append(d)
     return out
@@ -213,6 +223,18 @@ TRUNCATED_NOTE = ("Result capped at {n} rows. Narrow the query: a shorter date r
 
 def new_curated(name: str, source: str, obj, profiles: list) -> ToolDef:
     """A first draft from a discovered object: date range + one filter + numeric measures."""
+    if obj.kind == "document":                     # PDF / Word / Google Docs text passages: a search tool
+        paged = obj.column("page") is not None
+        params = [ToolParam("contains", "string", "Words or phrase to find in the text (not case-sensitive)",
+                            column="text", op="contains")]
+        if paged:
+            params.append(ToolParam("page", "integer", "Only this page", column="page"))
+        return ToolDef(name=name, kind="curated", title=name.replace("_", " ").capitalize(),
+                       description=f"Search the document {obj.name}: passages whose text contains the given "
+                                   f"words, with {'page and ' if paged else ''}section so the answer can be cited.",
+                       source=source, object=obj.name, risk=obj.risk if obj.risk in ("R1", "R2") else "R1",
+                       params=params, columns=[c.name for c in obj.columns if not c.pii],
+                       profiles=list(profiles), order_by="para")
     cols = [c for c in obj.columns if not c.pii]
     date_col = next((c.name for c in cols if c.type in ("date", "datetime")), "")
     numeric = [c for c in cols if c.type in ("number", "integer") and not c.name.lower().endswith("id")]
@@ -232,3 +254,80 @@ def new_curated(name: str, source: str, obj, profiles: list) -> ToolDef:
                    risk=obj.risk if obj.risk in ("R1", "R2") else "R1", params=params, measures=measures,
                    columns=[] if measures else [c.name for c in cols][:12], date_column=date_col,
                    profiles=list(profiles), order_by="" if measures else (f"-{date_col}" if date_col else ""))
+
+
+# ----------------------------------------------------------------------- templates
+TEMPLATES = {
+    "kpi": ("KPI over time", "Average or total per day / shift in a date range", "chart"),
+    "pareto": ("Top N / Pareto", "Biggest reasons, machines or products, ranked", "list"),
+    "lookup": ("Lookup list", "Rows filtered by a code, no aggregation", "table"),
+    "latest": ("Latest value", "Newest rows first, per machine or line", "activity"),
+    "search": ("Search a document", "Text passages with page and section", "search"),
+}
+
+
+def _cols(obj):
+    cols = [c for c in obj.columns if not c.pii]
+    date = next((c.name for c in cols if c.type in ("date", "datetime")), "")
+    num = [c for c in cols if c.type in ("number", "integer") and not c.name.lower().endswith("id")]
+    text = [c for c in cols if c.type == "string"]
+    return cols, date, num, text
+
+
+def fitting_templates(obj) -> list[str]:
+    """Templates that make sense for this table / view / document (in this order)."""
+    if obj.kind == "document":
+        return ["search"]
+    cols, date, num, text = _cols(obj)
+    out = []
+    if date and num:
+        out.append("kpi")
+    if text and num:
+        out.append("pareto")
+    if cols:
+        out.append("lookup")
+    if date:
+        out.append("latest")
+    return out
+
+
+def template_tool(kind: str, name: str, source: str, obj, profiles: list) -> ToolDef:
+    """A typed first draft from a template - every column comes from the discovered object."""
+    if kind == "search" or obj.kind == "document":
+        return new_curated(name, source, obj, profiles)
+    cols, date, num, text = _cols(obj)
+    base = dict(name=name, kind="curated", source=source, object=obj.name, profiles=list(profiles),
+                risk=obj.risk if obj.risk in ("R1", "R2") else "R1")
+    filt = [ToolParam(text[0].name, "string", f"Only this {text[0].name}", column=text[0].name)] if text else []
+    rng = [ToolParam("date_from", "date", "First day (plant time)", True, date, ">="),
+           ToolParam("date_to", "date", "Last day (plant time)", True, date, "<=")] if date else []
+    if kind == "kpi":
+        if not (date and num):
+            raise ValueError("KPI over time needs a date column and a number column")
+        groups = {date: [date]}
+        groups.update({c.name: [c.name] for c in text[:3]})
+        return ToolDef(**base, title=f"{obj.name.split('.')[-1]} over time",
+                       description=f"Averages from {obj.name} per {date} in a date range.",
+                       params=filt + rng + [ToolParam("group_by", "enum", "Group the result by", default=date,
+                                                      group=groups)],
+                       measures=[Measure(c.name, "avg") for c in num[:3]], date_column=date)   # sorted by the group
+    if kind == "pareto":
+        if not (text and num):
+            raise ValueError("Top N / Pareto needs a text column and a number column")
+        m = Measure(num[0].name, "sum", label=f"total_{num[0].name}")
+        return ToolDef(**base, title=f"Top {text[0].name} by {num[0].name}",
+                       description=f"{text[0].name} ranked by total {num[0].name} (largest first), from {obj.name}.",
+                       params=rng + [ToolParam("group_by", "enum", "Rank by", default=text[0].name,
+                                               group={c.name: [c.name] for c in text[:3]})],
+                       measures=[m], date_column=date, order_by=f"-{m.out}")
+    if kind == "lookup":
+        return ToolDef(**base, title=f"{obj.name.split('.')[-1]} list",
+                       description=f"Rows of {obj.name}, optionally filtered.", params=filt,
+                       columns=[c.name for c in cols][:12], order_by=cols[0].name if cols else "")
+    if kind == "latest":
+        if not date:
+            raise ValueError("Latest value needs a date / time column")
+        return ToolDef(**base, title=f"Latest {obj.name.split('.')[-1]}",
+                       description=f"Newest rows of {obj.name} first.", params=filt,
+                       columns=[c.name for c in cols][:12], order_by=f"-{date}")
+    raise ValueError(f"unknown template {kind!r}")

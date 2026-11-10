@@ -35,14 +35,14 @@ from PySide6.QtWidgets import (
 DARK = dict(
     mode="dark", bg="#232323", panel="#2d2d2d", panel2="#262626", input="#191919",
     border="#444444", hover="#3a3a3a", text="#e6e6e6", muted="#b0b0b0",
-    accent="#f29f43", accent_hover="#f5b26a", accent_text="#1a1a1a",
+    accent="#f78e01", accent_hover="#f9a43a", accent_text="#1a1a1a",
     ok="#4ade80", warn="#fbbf24", bad="#f87171", info="#60a5fa",
     toast_bg="#e6e6e6", toast_text="#1a1a1a",
 )
 LIGHT = dict(
     mode="light", bg="#f3f4f6", panel="#ffffff", panel2="#f9fafb", input="#ffffff",
     border="#d1d5db", hover="#e5e7eb", text="#1f2937", muted="#4b5563",
-    accent="#d97706", accent_hover="#b45309", accent_text="#ffffff",
+    accent="#f78e01", accent_hover="#e07f00", accent_text="#1a1a1a",
     ok="#15803d", warn="#b45309", bad="#b91c1c", info="#1d4ed8",
     toast_bg="#1f2937", toast_text="#ffffff",
 )

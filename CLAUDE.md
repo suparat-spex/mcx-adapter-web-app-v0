@@ -11,7 +11,7 @@ NX Logger. Formerly NX Logger (branch `nx-connectivity-categories`, tag `v6-mqda
 | Path | Owns |
 |---|---|
 | `mcx_core/config.py` | Project (.mcx YAML): sources (settings, discovered objects / items), tools (draft + `published` snapshot, version history), profiles, endpoint, auth (API keys: SHA-256 hashes only), limits, licence, audit cfg. `Project.publish` |
-| `mcx_core/adapters/` | One plug-in per source type: `base` (contract: SCHEMA, connect, ping/health, discover, read, history, select(Query)), `sql` (SQL Server / Postgres / MySQL / SQLite, identifier quoting, bound values, PII / block hints), `files` (CSV / Excel / REST via in-memory SQLite), `tags` (sim, Modbus, OPC UA, MQTT). Registry in `__init__` |
+| `mcx_core/adapters/` | One plug-in per source type: `base` (contract: SCHEMA, connect, ping/health, discover, read, history, select(Query)), `sql` (SQL Server / Postgres / MySQL / SQLite, identifier quoting, bound values, PII / block hints), `files` (CSV / Excel / REST via in-memory SQLite), `docs` (PDF / Word .docx: passages page / section / para / text + Word tables; search via the `contains` op), `google` (Google Sheets / Docs via a service account, read-only scopes), `tags` (sim, Modbus, OPC UA, MQTT). Registry in `__init__` |
 | `mcx_core/model.py` | ISA-95 tree from exposed items; `in_scope` for profile scopes |
 | `mcx_core/tools.py` | Generic tool defs, JSON schemas, `check_args`, `curated_query`, answer `envelope` |
 | `mcx_core/safety.py` | Risk classes / annotations, `check_publishable`, `visible`, `coerce`, range check, RateLimiter |
@@ -21,7 +21,7 @@ NX Logger. Formerly NX Logger (branch `nx-connectivity-categories`, tag `v6-mqda
 | `mcx_core/demo.py` | Demo plant: smc_demo SQLite, Excel, simulator, Modbus meters, tools, profiles, keys |
 | `mcx_web/app.py` | Console (runtime + MCP server in one process; `changed()` = save project + audit), every route; helpers (default_args, parse_args, snippets) |
 | `mcx_web/users.py` | Local accounts (SQLite `mcx_web.db` next to the project): PBKDF2 passwords, roles viewer < engineer < admin, sessions + CSRF, lockout, one-time flash |
-| `mcx_web/templates/`, `static/` | Jinja2 pages (base = top bar, nav, main, side panel, footer); `mcx.css` = Spex tokens light / dark; `mcx.js` = theme, autosubmit, test call, live status (no inline scripts - CSP) |
+| `mcx_web/templates/`, `static/` | Jinja2 pages (base = top bar brand / search / actions, nav with project info, main, right panel, footer); `_detail_*.html` = right-panel fragments (`/detail/...`); `_drawer.html` = add / edit forms in the drawer (`/drawer/<kind>/<key>`, posting to the normal routes with `back=`); `_macros` `pager` + `Pager` in app.py = server-side pagination; `mcx.css` = Spex tokens light / dark; `mcx.js` = theme, search (Ctrl K), resizable / closable right panel, row details, trees, confirm dialog, test call, live status (no inline scripts - CSP) |
 | `mcx_studio/main_window.py` | `AdapterWindow`: tree, document tabs, Properties targets (`_prop_*`), Runtime dock, actions |
 | `mcx_studio/widgets/` | `common` (Page, panel, table, Kpi, KpiRow, Columns, StepBar, Worker), `overview`, `source_page` (Connect > Discover > Expose > Review & publish), `profiles_page`, `pages` (Tools, Model, Safety, Endpoint, Audit, Licence, Alarms), `property_grid` |
 | `mcx_studio/theme/` | `ui_kit` (tokens `T`, QSS, AppWindow), `app_style` (extra QSS), `DESIGN.md` |

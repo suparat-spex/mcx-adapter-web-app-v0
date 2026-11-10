@@ -1,10 +1,12 @@
 """
-python -m mcx_web PROJECT.mcx [--host 127.0.0.1] [--port 8810]
+python -m mcx_web PROJECT.mcx | "Project name" [--host 127.0.0.1] [--port 8810]
 
 Runs the adapter (sources, MCP endpoint on the project's port, 8811 by default) and the web console
 (8810 by default) in one process. First visit with no users: create the first admin account.
-  --demo              create / open the demo plant project
+  --demo              create / open the demo plant project (also the default with no project)
   --create-admin NAME create an admin from the command line (asks for the password)
+A project file or name that does not exist yet is created as a new, empty project
+("My plant" = <user data>/Projects/My plant.mcx).
 """
 from __future__ import annotations
 
@@ -38,6 +40,15 @@ def main(argv=None):
             from mcx_core import demo
             f, keys = demo.create(paths.demo_dir())
             print(f"Demo project created: {f}\n  API keys (shown once): " + ", ".join(f"{k}={v}" for k, v in keys.items()))
+        project = str(f)
+    else:
+        f = Path(project)
+        if f.suffix.lower() != ".mcx" and f.parent == Path("."):    # a bare name: "My plant"
+            f = paths.projects_dir() / f"{project}.mcx"
+        if not f.exists():
+            from mcx_core.config import Project
+            Project.new(f.stem).save(f)
+            print(f"New empty project created: {f.resolve()}")
         project = str(f)
     if a.create_admin:
         from mcx_web.users import UserStore

@@ -21,7 +21,7 @@ PII_HINT = re.compile(r"(operator|employee|person|first_?name|last_?name|full_?n
                       r"address|comment|note|badge|user_?name|login|ip_addr|salary|wage|birth|supervisor|technician|signature)", re.I)
 BLOCK_HINT = re.compile(r"(^sys_|^sys\.|audit|login|password|credential|token|secret|session)", re.I)
 AGGS = {"avg": "AVG", "min": "MIN", "max": "MAX", "sum": "SUM", "count": "COUNT"}
-OPS = {"=", ">=", "<=", ">", "<", "in"}
+OPS = {"=", ">=", "<=", ">", "<", "in", "contains"}   # contains: LIKE with a bound, escaped value
 
 
 def classify(obj: SourceObject):
@@ -36,9 +36,25 @@ def classify(obj: SourceObject):
         obj.note = "personal data"
 
 
+def odbc_driver(installed: list, wanted: str) -> str:
+    """The configured SQL Server ODBC driver if installed, else the newest installed 'ODBC Driver N for
+    SQL Server' (17 when 18 is set, ...). The legacy 'SQL Server' driver is never picked by itself."""
+    if wanted in installed:
+        return wanted
+    found = sorted(((int(m.group(1)), d) for d in installed
+                    if (m := re.fullmatch(r"ODBC Driver (\d+) for SQL Server", d))), reverse=True)
+    if found:
+        return found[0][1]
+    raise AdapterError(f"ODBC driver {wanted!r} is not installed on this computer - install Microsoft "
+                       f"'ODBC Driver 18 for SQL Server' or set ODBC driver to one of: "
+                       f"{', '.join(installed) or 'none installed'}")
+
+
 def _type(t: str) -> str:
     t = (t or "").lower()
-    if any(x in t for x in ("int", "bit")):
+    if t in ("bit", "bool", "boolean"):            # yes / no flags: never averaged or summed
+        return "boolean"
+    if "int" in t:
         return "integer"
     if any(x in t for x in ("real", "float", "double", "dec", "numeric", "money")):
         return "number"
@@ -60,6 +76,10 @@ class SqlAdapter(Adapter):
         F("host", "Server", "str", "localhost", tip="Host name or IP (SQL Server: host\\instance allowed)"),
         F("port", "Port", "int", 0, (0, 65535), "0 = default for the database"),
         F("database", "Database name / file", "str", ""),
+        F("auth", "Authentication", "choice", "sql",
+          {"sql": "SQL Server login", "windows": "Windows (account running MCX Adapter)"},
+          tip="SQL Server only. Windows: no login / password - the Windows account running the adapter "
+              "must be read-only (db_datareader)"),
         F("user", "Login", "str", "mcp_reader", tip="A read-only login (db_datareader)"),
         F("password", "Password", "password", "", tip="Or ${ENV_VAR} to keep it out of the file"),
         F("schema", "Schema filter", "str", "", tip="Only this schema (empty = all)"),
@@ -84,11 +104,27 @@ class SqlAdapter(Adapter):
                 import pyodbc
             except ImportError:
                 raise AdapterError("SQL Server needs the pyodbc package (pip install pyodbc)") from None
+            if s("auth") != "windows" and "user" in self.settings and not str(self.settings["user"] or "").strip():
+                raise AdapterError("no login set - enter a SQL Server login and password, or set "
+                                   "Authentication to Windows")
             server = s("host") + (f",{s('port')}" if int(s("port") or 0) else "")
-            cs = (f"DRIVER={{{s('driver')}}};SERVER={server};DATABASE={s('database')};UID={s('user')};"
-                  f"PWD={s('password')};Encrypt={'yes' if s('encrypt') else 'no'};TrustServerCertificate=yes;"
+            cs = (f"DRIVER={{{odbc_driver(pyodbc.drivers(), s('driver'))}}};SERVER={server};DATABASE={s('database')};"
+                  + ("Trusted_Connection=yes;" if s("auth") == "windows" else f"UID={s('user')};PWD={s('password')};")
+                  + f"Encrypt={'yes' if s('encrypt') else 'no'};TrustServerCertificate=yes;"
                   "ApplicationIntent=ReadOnly")
-            c = pyodbc.connect(cs, timeout=int(timeout_s), readonly=True)
+            try:
+                c = pyodbc.connect(cs, timeout=int(timeout_s), readonly=True)
+            except pyodbc.Error as e:
+                msg = str(e)
+                if "08001" in msg or "HYT00" in msg:
+                    raise AdapterError(f"SQL Server {server!r} not found or not reachable - for a named instance "
+                                       f"(e.g. SQL Express) use HOST\\INSTANCE such as localhost\\SQLEXPRESS, "
+                                       f"and check the SQL Server service is running") from None
+                if "28000" in msg or "18456" in msg:
+                    raise AdapterError("SQL Server refused the login - check Authentication, login and password "
+                                       "(SQL Server logins need 'SQL Server and Windows Authentication mode')") \
+                        from None
+                raise
             c.timeout = int(timeout_s)
             return c
         if d == "postgres":
@@ -191,6 +227,10 @@ class SqlAdapter(Adapter):
             if agg:
                 if agg not in AGGS:
                     raise AdapterError(f"unknown aggregate {agg!r}")
+                oc = obj.column(c) if c != "*" else None
+                if oc is not None and oc.type == "boolean" and agg != "count":
+                    raise AdapterError(f"{c} is a yes / no column - {agg} is not possible (use count, "
+                                       f"or filter / group by it)")
                 expr = f"{AGGS[agg]}({col(c)})" if c != "*" else "COUNT(*)"
             else:
                 expr = col(c)
@@ -206,6 +246,10 @@ class SqlAdapter(Adapter):
                 vals = list(v)[:100]
                 where.append(f"{col(c)} IN ({', '.join([ph] * len(vals))})")
                 params += vals
+            elif op == "contains":
+                like = "ILIKE" if self.dialect == "postgres" else "LIKE"
+                where.append(f"{col(c)} {like} {ph} ESCAPE '!'")
+                params.append("%" + re.sub(r"([!%_\[])", r"!\1", str(v)) + "%")
             else:
                 where.append(f"{col(c)} {op} {ph}")
                 params.append(v)

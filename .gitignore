@@ -28,3 +28,10 @@ recordings/
 
 # Claude Code: share skills, keep personal settings local
 .claude/settings.local.json
+
+# Local runtime data - never commit (accounts, real project settings, audit trail)
+PROJECT.mcx
+*.mcx
+mcx_web.db
+mcx_web.db-*
+audit/

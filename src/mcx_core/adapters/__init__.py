@@ -3,15 +3,18 @@ test it against a local server / file in tests/test_adapters.py."""
 from __future__ import annotations
 
 from mcx_core.adapters.base import Adapter, AdapterError, DiscoverResult, Health, Query, Reading
+from mcx_core.adapters.docs import DocsAdapter
+from mcx_core.adapters.google import GoogleDocsAdapter, GoogleSheetsAdapter
 from mcx_core.adapters.files import FilesAdapter, RestAdapter
 from mcx_core.adapters.sql import SqlAdapter
 from mcx_core.adapters.tags import ModbusAdapter, MqttAdapter, OpcUaAdapter, SimAdapter
 
 ADAPTERS: dict[str, type[Adapter]] = {a.TYPE: a for a in (
-    SqlAdapter, OpcUaAdapter, ModbusAdapter, MqttAdapter, FilesAdapter, RestAdapter, SimAdapter)}
+    SqlAdapter, OpcUaAdapter, ModbusAdapter, MqttAdapter, FilesAdapter, DocsAdapter, GoogleSheetsAdapter, GoogleDocsAdapter,
+    RestAdapter, SimAdapter)}
 
 # shown in Add source as planned (later in the roadmap), not selectable
-PLANNED = ["Oracle", "InfluxDB", "PI / Canary historian", "PDF / Word documents", "NX Logger",
+PLANNED = ["Oracle", "InfluxDB", "PI / Canary historian", "NX Logger",
            "Siemens S7", "EtherNet/IP"]
 
 DIALECT_LABEL = {"sqlserver": "SQL Server", "postgres": "PostgreSQL", "mysql": "MySQL", "sqlite": "SQLite"}
@@ -33,7 +36,7 @@ def type_label(cfg) -> str:
     if cfg.type == "files":
         p = str(cfg.settings.get("path", "")).lower()
         return "CSV" if p.endswith(".csv") else "Excel"
-    return {"opcua": "OPC UA", "mqtt": "MQTT", "rest": "REST API", "sim": "Simulator"}.get(cfg.type, cfg.type)
+    return {"opcua": "OPC UA", "mqtt": "MQTT", "rest": "REST API", "docs": "Documents", "gsheets": "Google Sheets", "gdocs": "Google Docs", "sim": "Simulator"}.get(cfg.type, cfg.type)
 
 
 def family(cfg) -> str:

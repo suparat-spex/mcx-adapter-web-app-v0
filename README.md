@@ -6,7 +6,7 @@ Gateway, cloud AI gateways, Microsoft Copilot Studio) or directly with Claude. T
 their gateway and LLM; the adapter gives it plant data, and is **safe on its own**.
 
 - **Sources:** SQL Server / PostgreSQL / MySQL / SQLite tables and views, OPC UA (GENESIS64 and other
-  SCADA servers), Modbus TCP / RTU, MQTT, CSV / Excel files, REST / JSON APIs, a plant simulator.
+  SCADA servers), Modbus TCP / RTU, MQTT, CSV / Excel files, PDF / Word documents, Google Sheets / Docs, REST / JSON APIs, a plant simulator.
 - **Model:** every live item gets an ISA-95 path (site / area / line / machine), unit and limits.
 - **Tools:** generic `browse_model`, `list_assets`, `read_tag`, `query_history` over the model;
   curated tools (`get_oee`, `get_downtime_pareto` ...) built from views with typed parameters -

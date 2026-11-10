@@ -1,13 +1,50 @@
-{% extends "base.html" %}{% block title %}Tools{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import pager, row_actions, help_strip with context %}{% block title %}Tools{% endblock %}
 {% block content %}
 <div class="crumb">{{ project.name }} / Tools</div>
-<div class="head"><div><h1>Tools</h1><p>Generic tools read the ISA-95 model · curated tools answer one business question with typed parameters - never free SQL</p></div>
-<form action="/tools" method="get" class="row"><label class="sr" for="tq">Filter tools</label><input id="tq" name="q" value="{{ q }}" placeholder="Filter"><button class="btn">Filter</button></form></div>
-<section class="panel"><div class="ph"><span class="muted">All tools</span><span class="note">{{ summary.tools }} published · {{ pending }} pending</span></div>
-<div class="tbox"><table class="t"><thead><tr><th>Tool</th><th>Kind</th><th>Source · object</th><th>Risk</th><th>State</th><th>Version</th><th>Profiles</th><th class="r">Calls today</th></tr></thead><tbody>
-{% for r in rows %}<tr class="link {{ 'dim' if not r.t.enabled }}" data-href="/tools/{{ r.t.name }}"><td class="mono"><a href="/tools/{{ r.t.name }}">{{ r.t.name }}</a></td><td class="muted">{{ r.t.kind }}</td><td>{{ r.where }}</td><td class="{{ r.t.risk }}">{{ r.t.risk }}</td>
-<td class="{{ {'published':'ok','changed':'warn','draft':'warn'}[r.t.state] }}">{{ r.t.state }}</td><td>{{ ('v' ~ r.t.version) if r.t.version else '–' }}</td><td class="muted">{{ r.t.profiles|join(', ') or '–' }}</td><td class="r">{{ r.calls|fmt }}</td></tr>
-{% else %}<tr><td colspan="8" class="muted">No tools match</td></tr>{% endfor %}
-</tbody></table></div></section>
-<p class="muted small" style="margin:0">New curated tools come from a source: open it, step 3 (Expose as MCP tools), tick a table or view.</p>
+<div class="head"><div><h1>Tools</h1>
+<p class="figs"><a href="/tools" class="{{ 'on' if not fs }}"><b>{{ figs.all }}</b> tools</a><span>/</span><a href="/tools?state=published" class="{{ 'on' if fs == 'published' }}"><b>{{ figs.published }}</b> published</a><span>/</span><a href="/tools?state=draft" class="{{ 'on' if fs == 'draft' }}"><b>{{ figs.draft }}</b> drafts</a>{% if figs.held %}<span>/</span><a href="/tools?state=held" class="warn {{ 'on' if fs == 'held' }}"><b>{{ figs.held }}</b> held back</a>{% endif %}</p></div>
+{% if can_edit %}<a class="btn sm" href="/export/tools.csv">{{ icon("download", 14) }}Export CSV</a>{% endif %}</div>
+
+<section class="panel card-list tall">
+<form method="get" action="/tools" class="filterbar"><label class="sr" for="tq">Filter tools</label><span class="fsearch">{{ icon("search", 14) }}<input id="tq" name="q" value="{{ q }}" placeholder="Filter by name, table or description…"></span>
+<select name="kind" data-autosubmit aria-label="Kind"><option value="">Kind</option>{% for k in ('curated', 'generic') %}<option {{ 'selected' if fk == k }}>{{ k }}</option>{% endfor %}</select>
+<select name="state" data-autosubmit aria-label="State"><option value="">State</option>{% for k, l in (('published', 'published'), ('draft', 'draft / changed'), ('held', 'held back')) %}<option value="{{ k }}" {{ 'selected' if fs == k }}>{{ l }}</option>{% endfor %}</select>
+<select name="risk" data-autosubmit aria-label="Risk"><option value="">Risk</option>{% for r in risks %}<option {{ 'selected' if fr == r }}>{{ r }}</option>{% endfor %}</select>
+<select name="profile" data-autosubmit aria-label="Profile"><option value="">Profile</option>{% for x in project.profiles %}<option {{ 'selected' if fp == x.id }}>{{ x.id }}</option>{% endfor %}</select>
+<noscript><button class="btn sm">Filter</button></noscript>
+{% for k, v, label in chips %}<a class="fchip" href="{{ request.url.include_query_params(**{k: ''}) }}" title="Remove this filter">{{ label }}: {{ v }} {{ icon("x", 12) }}</a>{% endfor %}
+<span class="grow"></span><a class="btn ghost xs" href="{{ request.url }}" title="Reload">{{ icon("refresh", 14) }}</a></form>
+
+<form id="bulk" method="post" action="/bulk/tools">{{ csrf_field() }}<input type="hidden" name="back" value="{{ request.url.path }}?{{ request.url.query }}"></form>
+<div class="tbox scroll"><table class="t"><thead><tr>{% if can_edit %}<th class="ck"><input type="checkbox" data-check-all="bulk" aria-label="Select all tools on this page"></th>{% endif %}<th>Tool</th><th>Source · object</th><th>Risk</th><th>State</th><th class="wide">Profiles</th><th class="r wide">Calls today</th>{% if can_edit %}<th class="acts"><span class="sr">Actions</span></th>{% endif %}</tr></thead><tbody>
+{% for r in rows %}{% set t = r.t %}<tr class="link {{ 'dim' if not t.enabled }} {{ 'sel' if t.name == sel }}" data-href="/tools/{{ t.name }}" data-detail="/detail/tool/{{ t.name|urlencode }}" data-sel="{{ t.name }}" {% if can_edit %}data-edit="/drawer/tool/{{ t.name|urlencode }}"{% endif %} tabindex="0">
+{% if can_edit %}<td class="ck"><input type="checkbox" name="tool" value="{{ t.name }}" form="bulk" aria-label="Select {{ t.name }}"></td>{% endif %}
+<td class="mono"><a href="/tools?sel={{ t.name|urlencode }}">{{ t.name }}</a></td><td class="cut" title="{{ r.where }}">{{ r.where }}</td><td class="{{ t.risk }}">{{ t.risk }}</td>
+<td>{% if t.name in held %}<span class="chip s-bad">held back</span>{% elif t.state == 'published' %}<span class="ok">● live</span>{% else %}<span class="warn">◐ {{ t.state }}</span>{% endif %}{% if t.version %} <span class="muted small">v{{ t.version }}</span>{% endif %}</td>
+<td class="wide">{% for x in t.profiles %}<span class="pchip mono">{{ x }}</span>{% else %}<span class="muted">–</span>{% endfor %}</td><td class="r wide">{{ r.calls|fmt }}</td>
+{% if can_edit %}{% set items = [{"label": "View details", "href": "/tools?sel=" ~ t.name|urlencode, "icon": "panel-right"}, {"label": "Flow view", "href": "/tools/" ~ t.name ~ "?view=flow", "icon": "arrow-left-right"}, {"label": "Test call", "href": "/tools/" ~ t.name ~ "#test-form", "icon": "play"}] %}
+{% if t.changed and t.name not in held %}{% set items = items + [{"label": "Publish", "post": "/publish", "fields": {"tool": t.name, "back": "/tools"}, "icon": "upload"}] %}{% endif %}
+{% if t.published %}{% set items = items + [{"label": "Hide from clients", "post": "/tools/" ~ t.name ~ "/unpublish", "icon": "eye", "confirm": "Hide " ~ t.name ~ "? Clients stop seeing it."}] %}{% endif %}
+{% if t.kind == 'curated' %}{% set items = items + [{"label": "Delete", "post": "/tools/" ~ t.name ~ "/delete", "icon": "trash", "danger": true, "confirm": "Delete " ~ t.name ~ "? Clients stop seeing it after the next list."}] %}{% endif %}
+{{ row_actions("/drawer/tool/" ~ t.name|urlencode, "/tools/" ~ t.name, items) }}{% endif %}</tr>
+{% else %}<tr><td colspan="8" class="empty">No tools match{% if q or chips %} · <a href="/tools">Clear filters</a>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% if can_edit %}<div class="bulkbar" data-bulkbar="bulk"><span data-bulk-count>Tick tools to change several at once</span><span class="grow"></span>
+<button class="btn sm primary" form="bulk" name="action" value="publish">{{ icon("upload", 14) }}Publish</button>
+<span class="row" style="gap:4px"><select name="profile" form="bulk" aria-label="Profile">{% for x in project.profiles %}<option>{{ x.id }}</option>{% endfor %}</select><button class="btn sm" form="bulk" name="action" value="add_profile">Add to profile</button><button class="btn sm" form="bulk" name="action" value="remove_profile">Remove</button></span>
+<button class="btn sm" form="bulk" name="action" value="disable">Disable</button><button class="btn sm" form="bulk" name="action" value="enable">Enable</button>
+<button class="btn sm danger" form="bulk" name="action" value="delete" data-confirm="Delete the ticked curated tools? Generic tools are kept.">Delete</button></div>{% endif %}
+{{ pager(pg, "tools") }}</section>
+{{ help_strip("tools", [("Where tools come from", "Curated tools are made from a source: open it, step 3, tick a table or view - or start from a template."), ("Draft until Publish", "Edits stay a draft. Publish makes them live and tells every connected client at once."), ("Held back", "R2 tools (personal or cost data) are never published until an admin allows them.")]) }}
+{% endblock %}
+{% block side %}
+<aside class="side" id="side" aria-label="Details" data-detail-host data-base="/tools">
+<div data-detail-default {% if d %}hidden{% endif %}>
+<div class="sh"><div class="title">Tools</div><div class="muted small">{{ project.tools|length }} tools in this project</div></div>
+<div class="sec">Summary</div>
+<dl class="kv"><dt>Published</dt><dd class="ok">{{ figs.published }}</dd><dt>Draft / changed</dt><dd class="{{ 'warn' if n_draft else '' }}">{{ n_draft }}</dd><dt>Held back</dt><dd class="{{ 'bad' if figs.held }}">{{ figs.held }}</dd><dt>Curated</dt><dd>{{ n_curated }}</dd><dt>Generic</dt><dd>{{ project.tools|length - n_curated }}</dd></dl>
+<p class="pb muted small" style="padding-top:10px;margin:0">Click a tool to see it here · ✎ edits · ↑ ↓ to move · E edits the focused row · Esc closes.</p>
+</div>
+<div data-detail-body>{% if d %}{% include "_detail_tool.html" %}{% endif %}</div>
+</aside>
 {% endblock %}

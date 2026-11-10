@@ -168,7 +168,7 @@ class ParamsDialog(ActionDialog):
         for p in t.params:
             for cols in p.group.values():
                 used |= {c.lower() for c in cols}
-            if p.op not in ("=", ">=", "<=", ">", "<", "in"):
+            if p.op not in ("=", ">=", "<=", ">", "<", "in", "contains"):
                 return f"{p.name}: operator {p.op!r} not allowed"
         bad = sorted(u for u in used if u not in self.columns and u != "*")
         if bad and self.columns:

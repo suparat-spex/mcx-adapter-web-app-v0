@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcx-adapter"
-description = "MCX Adapter - plant data (SQL, OPC UA, Modbus, MQTT, Excel, REST) as safe, standard MCP tools, with a web console"
+description = "MCX Adapter - plant data (SQL, OPC UA, Modbus, MQTT, Excel, REST, PDF / Word, Google Sheets / Docs) as safe, standard MCP tools, with a web console"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["version"]
@@ -15,6 +15,8 @@ dependencies = [
     "asyncua>=1.1",                               # OPC UA client sources
     "paho-mqtt>=2.0",                             # MQTT sources
     "openpyxl>=3.1",                              # Excel sources
+    "cryptography>=41",                           # Google Sheets / Docs service-account tokens (also OPC UA)
+    "pypdf>=4.0",                                 # PDF document sources (Word .docx: standard library)
     "fastapi>=0.110",                             # web console
     "uvicorn>=0.29",
     "jinja2>=3.1",

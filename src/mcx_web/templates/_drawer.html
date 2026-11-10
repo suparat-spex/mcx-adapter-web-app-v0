@@ -1,0 +1,141 @@
+{% from "_macros.html" import csrf_field, col_icon, col_type with context %}
+{% macro head(title, sub="", chip="", chip_cls="") %}<div class="dw-h"><div class="dw-t"><div class="title">{{ title }}</div>{% if sub %}<div class="muted small mono">{{ sub }}</div>{% endif %}</div>{% if chip %}<span class="chip {{ chip_cls }}">{{ chip }}</span>{% endif %}<button class="btn ghost close" type="button" data-dw-close aria-label="Close ( Esc )" title="Close ( Esc )">{{ icon("x") }}</button></div>{% endmacro %}
+{% macro foot(save="Save", more=false, test=false) %}<div class="dw-f">{% if test %}<button class="btn sm" type="button" data-dw-test>{{ icon("play", 14) }}Test</button>{% endif %}{% if more %}<label class="row small" style="gap:6px"><input type="checkbox" data-dw-more>Create more</label>{% endif %}<span class="grow"></span><button class="btn sm" type="button" data-dw-close>Cancel</button><button class="btn sm primary" type="submit" title="Ctrl + Enter">{{ save }} <kbd class="kbd-in">Ctrl ↵</kbd></button></div>{% endmacro %}
+{% macro field(label, help="") %}<div class="dw-row"><div class="dw-l">{{ label }}{% if help %}<span>{{ help }}</span>{% endif %}</div><div class="dw-c">{{ caller() }}</div></div>{% endmacro %}
+
+{% if kind == 'tool' %}
+<form method="post" action="/tools/{{ t.name }}" class="dw-form" data-dw-form data-check="/tools/{{ t.name }}/check" data-test="/tools/{{ t.name }}/test">{{ csrf_field() }}<input type="hidden" name="back" value="{{ back }}"><input type="hidden" name="sensitive_ok_field" value="1">
+{{ head("Edit tool", t.name, {'published': 'live', 'changed': 'changed', 'draft': 'draft'}[t.state], {'published': 's-ok', 'changed': 's-warn', 'draft': 's-warn'}[t.state]) }}
+<div class="dw-b">
+<div class="dw-sec">General</div>
+{% call field("Title", "shown to people in AI apps") %}<input name="title" value="{{ t.title }}" maxlength="120">{% endcall %}
+{% call field("Description", "what the AI reads to decide when to call it") %}<textarea name="description" rows="3">{{ t.description }}</textarea>{% endcall %}
+{% call field("Risk") %}<span class="seg">{% for r in risks %}<label><input type="radio" name="risk" value="{{ r }}" {{ 'checked' if r == t.risk }}><span class="{{ r }}">{{ r }}</span></label>{% endfor %}</span>{% endcall %}
+{% call field("Profiles", "who can see it after Publish") %}<span class="chips">{% for x in project.profiles %}<label class="pick"><input type="checkbox" name="profiles" value="{{ x.id }}" {{ 'checked' if x.id in t.profiles }}><span class="mono">{{ x.id }}</span></label>{% endfor %}</span>{% endcall %}
+{% call field("Enabled") %}<label class="row small" style="gap:8px"><input type="checkbox" name="enabled" {{ 'checked' if t.enabled }}>listed to clients when published</label>{% endcall %}
+{% call field("ISA-95 scope", "context put in every answer") %}<input name="isa95" value="{{ t.isa95 }}" placeholder="e.g. Bangkok/Assembly">{% endcall %}
+{% if t.risk == 'R2' or t.sensitive_ok %}{% call field("R2 allowed", "sensitive reads stay off until enabled") %}<label class="row small" style="gap:8px"><input type="checkbox" name="sensitive_ok" {{ 'checked' if t.sensitive_ok }} {% if not can_admin %}disabled{% endif %}>allowed by an admin</label>{% endcall %}{% endif %}
+
+{% if t.kind == 'curated' %}
+<div class="dw-sec">Parameters <span class="tabs js-only" role="tablist"><button type="button" class="on" data-dw-tab="fields">Form</button><button type="button" data-dw-tab="yaml">YAML</button></span></div>
+<input type="hidden" name="mode" value="fields" data-dw-mode>
+<div data-dw-pane="fields">
+{% set pn = t.params|length + 1 %}<input type="hidden" name="p_n" value="{{ pn }}" data-dw-count="p">
+<div class="prows" data-dw-list="p">
+{% for p in t.params + [None] %}{% set i = loop.index0 %}{% set g = p and p.group %}
+<div class="prow" data-kind="{{ 'group' if g else 'filter' }}">
+<div class="prow-h"><input name="p{{ i }}_name" value="{{ p.name if p }}" class="mono" placeholder="{{ 'new parameter name' if not p else '' }}" aria-label="Parameter name">
+<select name="p{{ i }}_kind" data-dw-kind aria-label="Parameter kind"><option value="filter" {{ 'selected' if not g }}>Filter</option><option value="group" {{ 'selected' if g }}>Group by</option></select>
+<label class="del" title="Remove"><input type="checkbox" name="p{{ i }}_del">{{ icon("trash", 14) }}</label></div>
+<div class="prow-b only-filter"><select name="p{{ i }}_column" aria-label="Column"><option value="">column…</option>{% for col in cols %}<option value="{{ col.name }}" {{ 'selected' if p and p.column == col.name }}>{{ col.name }}</option>{% endfor %}</select>
+<select name="p{{ i }}_op" aria-label="Compare">{% for o in ops %}<option {{ 'selected' if p and p.op == o }}>{{ o }}</option>{% endfor %}</select>
+<select name="p{{ i }}_type" aria-label="Type">{% for ty in ptypes %}<option {{ 'selected' if p and p.type == ty }}>{{ ty }}</option>{% endfor %}</select>
+<label class="row small" style="gap:6px"><input type="checkbox" name="p{{ i }}_req" {{ 'checked' if p and p.required }}>required</label></div>
+<div class="prow-b only-group"><span class="chips">{% for col in cols %}<label class="pick"><input type="checkbox" name="p{{ i }}_choices" value="{{ col.name }}" {{ 'checked' if g and col.name in p.group }}><span class="mono">{{ col.name }}</span></label>{% endfor %}</span>
+<input type="hidden" name="p{{ i }}_default" value="{{ p.default if p and p.default else '' }}"></div>
+<input name="p{{ i }}_desc" value="{{ p.description if p }}" placeholder="Description the AI sees" aria-label="Description"></div>
+{% endfor %}</div>
+<button class="btn sm ghost js-only" type="button" data-dw-add="p">{{ icon("plus", 14) }}Add parameter</button>
+<div class="dw-sec">Result</div>
+{% set mn = t.measures|length + 1 %}<input type="hidden" name="m_n" value="{{ mn }}" data-dw-count="m">
+<div class="mrows" data-dw-list="m">{% for m in t.measures + [None] %}{% set i = loop.index0 %}
+<div class="mrow"><select name="m{{ i }}_column" aria-label="Measure column"><option value="">measure column…</option>{% for col in cols %}<option value="{{ col.name }}" {{ 'selected' if m and m.column == col.name }}>{{ col.name }}</option>{% endfor %}</select>
+<select name="m{{ i }}_agg" aria-label="Aggregate">{% for a in aggs %}<option {{ 'selected' if m and m.agg == a }}>{{ a }}</option>{% endfor %}</select>
+<input name="m{{ i }}_label" value="{{ m.label if m }}" placeholder="output name" class="mono" aria-label="Output name"><input name="m{{ i }}_unit" value="{{ m.unit if m }}" placeholder="unit" aria-label="Unit" size="6">
+<label class="del" title="Remove"><input type="checkbox" name="m{{ i }}_del">{{ icon("trash", 14) }}</label></div>{% endfor %}</div>
+<button class="btn sm ghost js-only" type="button" data-dw-add="m">{{ icon("plus", 14) }}Add measure</button>
+{% call field("Columns", "returned when there are no measures") %}<span class="chips">{% for col in cols %}<label class="pick"><input type="checkbox" name="cols" value="{{ col.name }}" {{ 'checked' if col.name in t.columns }}><span class="mono">{{ col_icon(col.type) }} {{ col.name }}</span></label>{% endfor %}</span>{% endcall %}
+{% call field("Order by") %}<span class="row"><select name="order_by"><option value="">group / natural order</option>{% for col in cols %}<option value="{{ col.name }}" {{ 'selected' if t.order_by.lstrip('-') == col.name }}>{{ col.name }}</option>{% endfor %}{% for m in t.measures if m.label %}<option value="{{ m.label }}" {{ 'selected' if t.order_by.lstrip('-') == m.label }}>{{ m.label }}</option>{% endfor %}{% set known = cols|map(attribute='name')|list + t.measures|map(attribute='label')|list %}{% if t.order_by and t.order_by.lstrip('-') not in known %}<option selected>{{ t.order_by.lstrip('-') }}</option>{% endif %}</select>
+<label class="row small" style="gap:6px"><input type="checkbox" name="order_desc" {{ 'checked' if t.order_by.startswith('-') }}>largest first</label></span>{% endcall %}
+{% call field("Date range column", "max days per call is checked on it") %}<select name="date_column"><option value="">none - no range limit</option>{% for col in cols %}<option value="{{ col.name }}" {{ 'selected' if t.date_column == col.name }}>{{ col.name }}{{ ' (' ~ col.type ~ ')' if col.type not in ('date', 'datetime') }}</option>{% endfor %}{% if t.date_column and t.date_column not in cols|map(attribute='name') %}<option selected>{{ t.date_column }}</option>{% endif %}</select>{% endcall %}
+</div>
+<div data-dw-pane="yaml" hidden><textarea name="params_yaml" class="mono" rows="16" disabled>{{ params_yaml }}</textarea>
+<p class="muted small" style="margin:6px 0 0">Columns: {{ cols|map(attribute='name')|join(', ') }}</p></div>
+<template data-dw-tpl="p"><div class="prow" data-kind="filter"><div class="prow-h"><input name="p__i___name" class="mono" placeholder="new parameter name" aria-label="Parameter name"><select name="p__i___kind" data-dw-kind aria-label="Parameter kind"><option value="filter">Filter</option><option value="group">Group by</option></select><label class="del" title="Remove"><input type="checkbox" name="p__i___del">{{ icon("trash", 14) }}</label></div>
+<div class="prow-b only-filter"><select name="p__i___column" aria-label="Column"><option value="">column…</option>{% for col in cols %}<option>{{ col.name }}</option>{% endfor %}</select><select name="p__i___op" aria-label="Compare">{% for o in ops %}<option>{{ o }}</option>{% endfor %}</select><select name="p__i___type" aria-label="Type">{% for ty in ptypes %}<option>{{ ty }}</option>{% endfor %}</select><label class="row small" style="gap:6px"><input type="checkbox" name="p__i___req">required</label></div>
+<div class="prow-b only-group"><span class="chips">{% for col in cols %}<label class="pick"><input type="checkbox" name="p__i___choices" value="{{ col.name }}"><span class="mono">{{ col.name }}</span></label>{% endfor %}</span></div>
+<input name="p__i___desc" placeholder="Description the AI sees" aria-label="Description"></div></template>
+<template data-dw-tpl="m"><div class="mrow"><select name="m__i___column" aria-label="Measure column"><option value="">measure column…</option>{% for col in cols %}<option>{{ col.name }}</option>{% endfor %}</select><select name="m__i___agg" aria-label="Aggregate">{% for a in aggs %}<option>{{ a }}</option>{% endfor %}</select><input name="m__i___label" placeholder="output name" class="mono" aria-label="Output name"><input name="m__i___unit" placeholder="unit" aria-label="Unit" size="6"><label class="del" title="Remove"><input type="checkbox" name="m__i___del">{{ icon("trash", 14) }}</label></div></template>
+{% endif %}
+<div class="dw-sec">Check</div>
+<p class="dw-check small" data-dw-check>Changes are checked as you type.</p>
+<div class="dw-sig mono small" data-dw-sig>{{ sig }}</div>
+<div class="dw-test" data-dw-test-box hidden><div class="row"><input class="mono argbox" data-dw-args placeholder="arguments, e.g. line=&quot;L1&quot;" aria-label="Test arguments"><button class="btn sm" type="button" data-dw-run>{{ icon("play", 14) }}Run saved draft</button></div><pre class="code" data-dw-out>Save first - Test runs the saved draft.</pre></div>
+</div>
+{{ foot("Save draft", test=true) }}</form>
+
+{% elif kind == 'source' and new %}
+<form method="post" action="/sources/new" class="dw-form" data-dw-form>{{ csrf_field() }}
+{{ head("Add source", "read-only - use a read-only account") }}
+<div class="dw-b">
+{% for cat, items in cats.items() %}<div class="dw-sec">{{ cat }}</div><div class="typegrid">{% for it in items %}<label class="typecard"><input type="radio" name="type" value="{{ it.type }}" required>{{ icon(it.icon) }}<span>{{ it.label }}</span></label>{% endfor %}</div>{% endfor %}
+<div class="dw-sec">Name</div>
+{% call field("Name", "people see it, the AI does not") %}<input name="name" required placeholder="e.g. oee-genesis, power meters">{% endcall %}
+</div>
+{{ foot("Add source") }}</form>
+
+{% elif kind == 'source' %}
+<form method="post" action="/sources/{{ s.id }}/settings" class="dw-form" data-dw-form>{{ csrf_field() }}<input type="hidden" name="back" value="{{ back }}">
+{{ head("Edit source", type_label ~ " · " ~ s.id) }}
+<div class="dw-b">
+<div class="dw-sec">General</div>
+{% call field("Name") %}<input name="name" value="{{ s.name }}">{% endcall %}
+{% call field("ISA-95 context", "where this data comes from, e.g. Bangkok/Assembly") %}<input name="isa95" value="{{ s.isa95 }}" placeholder="Site/Area">{% endcall %}
+{% call field("Enabled") %}<label class="row small" style="gap:8px"><input type="checkbox" name="enabled" {{ 'checked' if s.enabled }}>connect and poll</label>{% endcall %}
+<div class="dw-sec">Connection</div>
+{% for f in settings_view %}{% call field(f.label, f.tip) %}
+{% if f.type == 'bool' %}<label class="row small" style="gap:8px"><input type="checkbox" name="{{ f.key }}" {{ 'checked' if f.value }}>on</label>
+{% elif f.type == 'choice' %}<select name="{{ f.key }}">{% for v, tx in f.choices %}<option value="{{ v }}" {{ 'selected' if v == f.value }}>{{ tx }}</option>{% endfor %}</select>
+{% elif f.type == 'text' %}<textarea name="{{ f.key }}" rows="3">{{ f.value }}</textarea>
+{% elif f.type == 'password' %}<input type="password" name="{{ f.key }}" autocomplete="new-password" placeholder="{{ '•••••••• (stored - empty keeps it)' if f.has_secret else 'or ${ENV_VAR}' }}">
+{% else %}<input name="{{ f.key }}" value="{{ f.value }}" {% if f.type in ('int', 'float') %}inputmode="decimal"{% endif %}>{% endif %}{% endcall %}{% endfor %}
+<div class="row" style="padding:8px 0"><button class="btn sm" type="button" data-post-json="/sources/{{ s.id }}/test" data-out="dw-conn">Test connection</button><span id="dw-conn" class="small muted">tests the saved settings</span></div>
+</div>
+{{ foot("Save and reconnect") }}</form>
+
+{% elif kind == 'profile' %}
+<form method="post" action="{{ '/profiles' if new else '/profiles/' ~ x.id }}" class="dw-form" data-dw-form>{{ csrf_field() }}<input type="hidden" name="back" value="{{ back }}">
+{{ head("New profile" if new else "Edit profile", "" if new else project.endpoint.path ~ "/" ~ x.id) }}
+<div class="dw-b">
+{% if new %}{% call field("Id", "lower case - becomes the endpoint path") %}<input name="id" required pattern="[a-z][a-z0-9_\-]{0,30}" placeholder="e.g. maint" class="mono">{% endcall %}{% endif %}
+{% call field("Title") %}<input name="title" value="{{ x.title if x }}" placeholder="e.g. Maintenance team">{% endcall %}
+{% call field("Max risk", "tools above this are never listed") %}<span class="seg">{% for r in risks %}<label><input type="radio" name="max_risk" value="{{ r }}" {{ 'checked' if (x and x.max_risk == r) or (not x and r == 'R1') }}><span class="{{ r }}">{{ r }}</span></label>{% endfor %}</span>{% endcall %}
+{% call field("ISA-95 scope", "only this part of the plant, e.g. Bangkok/Molding") %}<input name="scope" value="{{ x.scope if x }}" placeholder="all">{% endcall %}
+{% call field("Description") %}<textarea name="description" rows="3">{{ x.description if x }}</textarea>{% endcall %}
+</div>
+{{ foot("Create profile" if new else "Save profile", more=new) }}</form>
+
+{% elif kind == 'user' %}
+<form method="post" action="{{ '/users' if new else '/users/' ~ u.id }}" class="dw-form" data-dw-form>{{ csrf_field() }}<input type="hidden" name="back" value="{{ back }}">{% if not new %}<input type="hidden" name="action" value="edit">{% endif %}
+{{ head("Add user" if new else "Edit user", "" if new else u.username) }}
+<div class="dw-b">
+{% if new %}{% call field("User name", "letters, digits . - _") %}<input name="username" required autocomplete="off">{% endcall %}{% endif %}
+{% call field("Full name") %}<input name="name" value="{{ u.name if u }}">{% endcall %}
+{% call field("Role") %}<span class="col" style="gap:6px">{% for r in roles|reverse %}<label class="row small" style="gap:8px;align-items:flex-start"><input type="radio" name="role" value="{{ r }}" {{ 'checked' if (u and u.role == r) or (not u and r == 'viewer') }}><span><b>{{ ROLE_TEXT[r] }}</b> <span class="muted">- {{ role_help[r] }}</span></span></label>{% endfor %}</span>{% endcall %}
+{% if not new %}{% call field("Active") %}<label class="row small" style="gap:8px"><input type="checkbox" name="active" {{ 'checked' if u.active }} {% if u.id == user.id %}disabled checked{% endif %}>can sign in</label>{% endcall %}{% endif %}
+{% call field("Password" if new else "New password", "at least 10 characters, letters and digits" if new else "empty keeps the current one") %}<input type="password" name="password" autocomplete="new-password" {{ 'required' if new }}>{% endcall %}
+</div>
+{{ foot("Add user" if new else "Save user", more=new) }}</form>
+
+{% elif kind == 'key' %}
+<form method="post" action="/keys" class="dw-form" data-dw-form>{{ csrf_field() }}<input type="hidden" name="back" value="{{ back }}">
+{{ head("Create API key", "the secret is shown once") }}
+<div class="dw-b">
+{% call field("Profile", "the key only sees this profile's tools") %}<select name="profile">{% for x in profiles %}<option value="{{ x.id }}">{{ x.id }} · {{ x.title }}</option>{% endfor %}<option value="">any profile</option></select>{% endcall %}
+{% call field("Client", "who uses it, e.g. Copilot Studio - QE") %}<input name="client" placeholder="optional">{% endcall %}
+<p class="muted small">Only a SHA-256 hash is kept. After Create, the key is shown <b>once</b> at the top of the page - copy it then.</p>
+</div>
+{{ foot("Create key") }}</form>
+
+{% elif kind == 'template' %}
+<div class="dw-form">
+{{ head("Start from a template", o.name) }}
+<div class="dw-b"><p class="muted small" style="margin-top:0">Pick how the AI should use <b class="mono">{{ o.name }}</b>. Every column comes from the discovered table - you can edit the tool afterwards.</p>
+<div class="tplgrid">{% for cd in cards %}<form method="post" action="/sources/{{ s.id }}/expose" class="tplcard {{ '' if cd.fits else 'off' }}">{{ csrf_field() }}<input type="hidden" name="key" value="{{ o.name }}"><input type="hidden" name="on" value="1"><input type="hidden" name="template" value="{{ cd.k }}">
+<div class="tc-h">{{ icon(cd.icon) }}<b>{{ cd.title }}</b></div><p>{{ cd.text }}</p>
+{% if cd.fits %}<div class="mono small tc-sig">{{ cd.sig }}</div><button class="btn sm">{{ icon("plus", 14) }}Use this</button>{% else %}<span class="muted small">Not for this {{ o.kind }}</span>{% endif %}</form>{% endfor %}</div>
+<form method="post" action="/sources/{{ s.id }}/expose" class="row" style="margin-top:12px">{{ csrf_field() }}<input type="hidden" name="key" value="{{ o.name }}"><input type="hidden" name="on" value="1"><button class="btn sm ghost">or expose with an automatic draft</button></form>
+</div>
+<div class="dw-f"><span class="grow"></span><button class="btn sm" type="button" data-dw-close>Cancel</button></div>
+</div>
+{% endif %}

@@ -1,0 +1,8 @@
+<div class="dh"><div class="dt"><div class="title">Record #{{ sel.seq }}</div><div class="muted small">{{ (sel.time or '')[:19]|replace('T', ' ') }} · {{ sel.client }}</div></div>
+<span class="dnav js-only"><button class="btn ghost close" type="button" data-prev title="Previous ( ↑ )" aria-label="Previous">{{ icon("chevron-left") }}</button><button class="btn ghost close" type="button" data-next title="Next ( ↓ )" aria-label="Next">{{ icon("chevron-right") }}</button><button class="btn ghost close" type="button" data-dclose title="Close ( Esc )" aria-label="Close details">{{ icon("x") }}</button></span></div>
+<div class="pb"><span class="chip {{ {'ok': 's-ok', 'truncated': 's-warn'}.get(sel.result, 's-bad') }}">{{ sel.result }}{{ ' · test call' if sel.test }}</span></div>
+<div class="sec">Call</div>
+<dl class="kv"><dt>Tool / action</dt><dd class="mono">{{ sel.tool }}</dd><dt>Client</dt><dd>{{ sel.client }}</dd><dt>Profile</dt><dd class="mono">{{ sel.profile or '–' }}</dd><dt>Via</dt><dd>{{ sel.via }}</dd>
+<dt>Rows</dt><dd>{{ '–' if sel.result == 'blocked' else sel.rows }}</dd><dt>Time taken</dt><dd>{{ sel.ms }} ms</dd></dl>
+{% if sel.error %}<div class="sec">Why</div><p class="pb small" style="padding-top:10px;margin:0">{{ sel.error }}</p>{% endif %}
+<div class="sec">JSON line</div><div class="pb" style="padding-top:10px"><pre class="code">{{ sel_json }}</pre></div>

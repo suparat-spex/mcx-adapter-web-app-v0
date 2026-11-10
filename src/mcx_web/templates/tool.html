@@ -1,11 +1,43 @@
-{% extends "base.html" %}{% block title %}{{ t.name }}{% endblock %}
+{% extends "base.html" %}{% from "_macros.html" import arg_hint %}{% block title %}{{ t.name }}{% endblock %}
 {% block content %}
 <div class="crumb"><a href="/tools">Tools</a> / {{ t.name }}</div>
 <div class="head"><div><h1 class="mono" style="font-size:22px">{{ t.name }}</h1><p>{{ 'Curated tool · ' ~ (src.name if src else t.source) ~ ' · ' ~ t.object if t.kind == 'curated' else 'Generic tool over the ISA-95 model' }} · <span class="{{ {'published':'ok','changed':'warn','draft':'warn'}[t.state] }}">{{ {'published':'published v' ~ t.version, 'changed':'v' ~ t.version ~ ' live · draft changed', 'draft':'draft, not published'}[t.state] }}</span></p></div>
-{% if can_edit %}{% if t.changed %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="tool" value="{{ t.name }}"><input type="hidden" name="back" value="/tools/{{ t.name }}"><button class="btn primary">{{ icon("upload") }}Publish</button></form>{% endif %}
+<span class="seg viewsw"><a href="/tools/{{ t.name }}" class="{{ 'on' if view == 'form' }}">Form</a><a href="/tools/{{ t.name }}?view=flow" class="{{ 'on' if view == 'flow' }}">Flow</a></span>
+{% if can_edit %}<a class="btn sm" href="#t-title" data-drawer="/drawer/tool/{{ t.name|urlencode }}">{{ icon("pencil", 14) }}Edit</a>{% if t.changed %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="tool" value="{{ t.name }}"><input type="hidden" name="back" value="/tools/{{ t.name }}"><button class="btn primary">{{ icon("upload") }}Publish</button></form>{% endif %}
 {% if t.published %}{{ post_button("/tools/" ~ t.name ~ "/unpublish", "Hide", "btn", None, "Hide " ~ t.name ~ "? Clients stop seeing it.") }}{% endif %}
 {% if t.kind == 'curated' %}{{ post_button("/tools/" ~ t.name ~ "/delete", "Delete", "btn danger", "trash", "Delete " ~ t.name ~ "?") }}{% endif %}{% endif %}</div>
 {% if check %}<div class="panel banner warn"><span>Cannot publish: {{ check }}</span></div>{% endif %}
+{% if view == 'flow' %}
+<div class="flowwrap">
+<div class="flow" data-flow>
+{% set pii = obj.pii_columns()|sort if obj else [] %}
+<section class="fnode" data-step="1"><div class="fh"><span class="fn">1</span><b>Who can call</b><span class="fst" data-fst></span>{% if can_edit %}<a class="btn ghost xs" href="#" data-drawer="/drawer/tool/{{ t.name|urlencode }}" title="Edit">{{ icon("pencil", 14) }}</a>{% endif %}</div>
+<dl class="kv"><dt>Profiles</dt><dd>{% for x in t.profiles %}<span class="pchip mono">{{ x }}</span>{% else %}<span class="warn">none - nobody can call it</span>{% endfor %}</dd><dt>Risk</dt><dd class="{{ t.risk }}">{{ t.risk }} · {{ RISK_INFO[t.risk][0] }}</dd><dt>State</dt><dd>{{ t.state }}{{ ' · v' ~ t.version if t.version }}</dd></dl></section>
+<div class="flink" aria-hidden="true"></div>
+<section class="fnode" data-step="2"><div class="fh"><span class="fn">2</span><b>What the AI sends</b><span class="fst" data-fst></span>{% if can_edit %}<a class="btn ghost xs" href="#" data-drawer="/drawer/tool/{{ t.name|urlencode }}" title="Edit">{{ icon("pencil", 14) }}</a>{% endif %}</div>
+<div class="mono small sig">{{ sig }}</div>
+<dl class="kv">{% for p in params %}<dt class="mono">{{ p.name }}</dt><dd><span class="muted">{{ p.type }}</span>{% if p.notes %} · {{ p.notes }}{% endif %}</dd>{% else %}<dt>–</dt><dd class="muted">no parameters</dd>{% endfor %}</dl></section>
+<div class="flink" aria-hidden="true"></div>
+<section class="fnode lock" data-step="3"><div class="fh"><span class="fn">3</span><b>Safety checks</b><span class="fst" data-fst></span><a class="btn ghost xs" href="/safety" title="Set on Safety &amp; limits - the same for every tool">{{ icon("shield", 14) }}</a></div>
+<p class="small" style="margin:0 0 6px">Typed arguments only · max <b>{{ lim.max_rows }}</b> rows{% if t.date_column %} · max <b>{{ lim.max_days }}</b> days on {{ t.date_column }}{% endif %} · <b>{{ '%g'|format(lim.timeout_s) }}</b> s timeout · <b>{{ lim.rate_per_min }}</b> calls / min · every call audited</p></section>
+<div class="flink" aria-hidden="true"></div>
+<section class="fnode" data-step="4"><div class="fh"><span class="fn">4</span><b>Read from source</b><span class="fst" data-fst></span>{% if can_edit and t.kind == 'curated' %}<a class="btn ghost xs" href="#" data-drawer="/drawer/tool/{{ t.name|urlencode }}" title="Edit">{{ icon("pencil", 14) }}</a>{% endif %}</div>
+{% if t.kind == 'curated' %}<dl class="kv"><dt>Source</dt><dd>{{ src.name if src else t.source }}</dd><dt>Object</dt><dd class="mono">{{ t.object }}</dd>
+<dt>Reads</dt><dd class="mono small">{% if t.measures %}{% for m in t.measures %}{{ m.agg }}({{ m.column }}){{ ', ' if not loop.last }}{% endfor %}{% for p in t.params if p.group %} by {{ p.name }}{% endfor %}{% else %}{{ t.columns|join(', ') or 'all allowed columns' }}{% endif %}</dd>
+{% if t.order_by %}<dt>Order</dt><dd class="mono small">{{ t.order_by }}</dd>{% endif %}</dl>
+{% else %}<p class="small" style="margin:0">ISA-95 model: live values and history of the exposed tags.</p>{% endif %}</section>
+<div class="flink" aria-hidden="true"></div>
+<section class="fnode" data-step="5"><div class="fh"><span class="fn">5</span><b>Answer</b><span class="fst" data-fst></span></div>
+<p class="small" style="margin:0">Rows + units + ISA-95 path + source + time · {{ 'personal-data columns removed: ' ~ pii|join(', ') if pii else 'no personal data in this object' }}</p></section>
+</div>
+<aside class="flowhelp" data-help="flow"><div class="row"><b class="grow">How this tool works</b><button class="btn ghost close js-only" type="button" data-help-close aria-label="Hide">{{ icon("x") }}</button></div>
+<p>A request goes top to bottom. Each step can stop it - the answer only leaves after all five.</p>
+<p><b>2</b> Arguments are typed: a text value can never become SQL.</p><p><b>3</b> Limits come from Safety &amp; limits and are the same for every tool.</p><p><b>5</b> Personal-data columns are removed here, even if a query asked for them.</p>
+{% if can_edit %}<form id="test-form" method="post" action="/tools/{{ t.name }}/test" class="col" style="gap:8px" data-flow-test><label for="args"><b>Test the draft</b></label><input id="args" name="args" class="mono argbox" value="{{ args }}" placeholder="{{ arg_hint(t)|forceescape }}"><button class="btn sm primary">{{ icon("play", 14) }}Run test</button></form>
+<div id="test-note" class="small muted">The steps light up with the result.</div><pre id="test-out" class="code" style="max-height:220px" hidden></pre>{% endif %}
+</aside>
+</div>
+{% else %}
 <div class="grid2">
 <section class="panel"><div class="ph"><h2>Settings</h2><span class="note">changes stay a draft until Publish</span></div>
 <form method="post" action="/tools/{{ t.name }}" class="pb">{{ csrf_field() }}
@@ -16,7 +48,7 @@
 <span class="muted">Profiles</span><span class="row">{% for x in project.profiles %}<label class="row" style="gap:6px;color:var(--text)"><input type="checkbox" name="profiles" value="{{ x.id }}" {{ 'checked' if x.id in t.profiles }} {% if not can_edit %}disabled{% endif %}><span class="mono">{{ x.id }}</span></label>{% endfor %}</span>
 <label for="t-isa">ISA-95 scope</label><input id="t-isa" name="isa95" value="{{ t.isa95 }}" placeholder="{{ src.isa95 if src else '' }}" {% if not can_edit %}disabled{% endif %}>
 <label for="t-en">Enabled</label><span><input id="t-en" type="checkbox" name="enabled" {{ 'checked' if t.enabled }} {% if not can_edit %}disabled{% endif %}></span>
-<label for="t-r2">R2 allowed by admin</label><span><input id="t-r2" type="checkbox" name="sensitive_ok" {{ 'checked' if t.sensitive_ok }} {% if not can_edit %}disabled{% endif %}> <span class="muted small">sensitive reads stay off until enabled</span></span>
+<label for="t-r2">R2 allowed by admin</label><span><input type="hidden" name="sensitive_ok_field" value="1"><input id="t-r2" type="checkbox" name="sensitive_ok" {{ 'checked' if t.sensitive_ok }} {% if not can_edit %}disabled{% endif %}> <span class="muted small">sensitive reads stay off until enabled</span></span>
 {% if t.kind == 'curated' %}<label for="t-params">Parameters (YAML)</label><textarea id="t-params" name="params_yaml" class="mono" rows="14" {% if not can_edit %}disabled{% endif %}>{{ params_yaml }}</textarea>
 <span></span><span class="muted small">Typed only: filters compare a column with a bound value; group_by picks columns from a fixed list. Columns: {{ columns|join(', ') }}</span>{% endif %}
 </div>
@@ -26,10 +58,11 @@
 <div class="pb col" style="gap:10px">
 <div class="mono" style="color:var(--accent-ink);overflow-wrap:anywhere">{{ sig }}</div>
 <div class="tbox"><table class="t"><thead><tr><th>Parameter</th><th>Type</th><th>Notes</th></tr></thead><tbody>{% for p in params %}<tr><td class="mono">{{ p.name }}</td><td>{{ p.type }}</td><td class="muted wrap">{{ p.notes }}</td></tr>{% endfor %}</tbody></table></div>
-{% if can_edit %}<form id="test-form" method="post" action="/tools/{{ t.name }}/test" class="row"><label for="args"><b>Test call</b></label><input id="args" name="args" class="mono argbox" value="{{ args }}"><button class="btn primary">▶ Run</button></form>
+{% if can_edit %}<form id="test-form" method="post" action="/tools/{{ t.name }}/test" class="row"><label for="args"><b>Test call</b></label><input id="args" name="args" class="mono argbox" value="{{ args }}" placeholder="{{ arg_hint(t)|forceescape }}" title="name=&quot;value&quot;, separated by commas - or JSON"><button class="btn primary">▶ Run</button></form>
 <pre id="test-out" class="code" style="min-height:180px">Run a test call to see the answer envelope.</pre><div id="test-note" class="small muted">Runs the draft with the adapter's limits; audited as a test.</div>{% endif %}
 </div></section>
 </div>
+{% endif %}
 <section class="panel"><div class="ph"><h2>Version history</h2></div><div class="tbox"><table class="t"><thead><tr><th>Version</th><th>Time</th><th>By</th><th>Note</th></tr></thead><tbody>
 {% for hh in t.history|reverse %}<tr><td>v{{ hh.version }}</td><td class="muted">{{ hh.time[:16]|replace('T',' ') }}</td><td>{{ hh.user }}</td><td class="muted">{{ hh.note }}</td></tr>{% else %}<tr><td colspan="4" class="muted">Never published</td></tr>{% endfor %}
 </tbody></table></div></section>

@@ -177,3 +177,44 @@ def test_coerce_types():
         coerce(ToolParam("b", "boolean"), "yes")
     with pytest.raises(SafetyError):
         coerce(ToolParam("s", "string"), "x" * 500)
+
+
+def test_odbc_driver_fallback():
+    from mcx_core.adapters.base import AdapterError
+    from mcx_core.adapters.sql import odbc_driver
+    inst = ["SQL Server", "ODBC Driver 13 for SQL Server", "ODBC Driver 17 for SQL Server"]
+    assert odbc_driver(inst, "ODBC Driver 17 for SQL Server") == "ODBC Driver 17 for SQL Server"
+    assert odbc_driver(inst, "ODBC Driver 18 for SQL Server") == "ODBC Driver 17 for SQL Server"
+    assert odbc_driver(inst, "SQL Server") == "SQL Server"                 # set explicitly: kept
+    with pytest.raises(AdapterError, match="not installed"):
+        odbc_driver(["SQL Server"], "ODBC Driver 18 for SQL Server")
+
+
+def test_rows_are_json_safe():
+    import decimal
+    import uuid
+    from mcx_core.tools import rows_as_dicts
+    u = uuid.uuid4()
+    rows = rows_as_dicts(["a", "b", "c", "d", "e", "f", "g", "h"],
+                         [[decimal.Decimal("0.300000"), decimal.Decimal("12.000"), dt.time(6, 30), u,
+                           dt.timedelta(minutes=2), float("nan"), True, b"\x00"]])
+    assert rows == [{"a": 0.3, "b": 12, "c": "06:30:00", "d": str(u), "e": 120.0, "f": None, "g": True, "h": None}]
+    json.dumps(rows)
+
+
+def test_bit_columns_are_flags():
+    from mcx_core.adapters.base import AdapterError
+    from mcx_core.adapters.sql import _type
+    from mcx_core.config import Column, SourceObject
+    from mcx_core.tools import new_curated
+    assert _type("bit") == "boolean" and _type("tinyint") == "integer" and _type("bigint") == "integer"
+    o = SourceObject("dbo.machine", "table", [Column("machine_code", "string"), Column("sequence_no", "integer"),
+                                              Column("is_active", "boolean")])
+    t = new_curated("m", "s", o, ["all"])
+    assert [m.column for m in t.measures] == ["sequence_no"]          # the flag is not averaged
+    a = SqlAdapter.__new__(SqlAdapter)
+    a.settings = {"dialect": "sqlserver"}
+    with pytest.raises(AdapterError, match="yes / no column"):
+        a.build(o, Query([("is_active", "avg", "x")]))
+    sql, _ = a.build(o, Query([("is_active", "count", "n")]))
+    assert "COUNT(" in sql

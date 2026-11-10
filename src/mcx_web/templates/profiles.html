@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}Tool profiles{% endblock %}
 {% block content %}
 <div class="crumb">{{ project.name }} / Tool profiles{% if prof %} / {{ pid }}{% endif %}</div>
-<div class="head"><div><h1>Tool profiles</h1><p>One endpoint per team · a gateway sees only the tools in its profile</p></div>
+<div class="head"><div><h1>Tool profiles</h1><p>One endpoint per team · a gateway sees only the tools in its profile</p></div>{% if can_edit %}{% if prof %}<a class="btn sm" href="#np" data-drawer="/drawer/profile/{{ prof.id }}">{{ icon("pencil", 14) }}Edit {{ prof.id }}</a>{% endif %}<a class="btn sm primary" href="#np" data-drawer="/drawer/profile/new">{{ icon("plus", 14) }}New profile</a>{% endif %}
 {% if can_edit %}<form method="post" action="/profiles" class="row">{{ csrf_field() }}<label class="sr" for="np">New profile id</label><input id="np" name="id" placeholder="id, e.g. maint" size="10" required><input name="title" placeholder="Title" size="14" aria-label="Title"><select name="max_risk" aria-label="Max risk"><option value="R1">R1 · read</option><option value="R0">R0 · metadata</option><option value="R3">R3 · compute</option></select><button class="btn">{{ icon("plus") }}New profile</button></form>{% endif %}</div>
 <div class="grid2">
 <section class="panel"><div class="ph"><span class="muted">Tools in each profile</span><span class="note">{{ summary.tools }} published{% set held = project.tools|selectattr('published','none')|selectattr('risk','equalto','R2')|list %}{% if held %} · {{ held|length }} held back{% endif %}</span></div>

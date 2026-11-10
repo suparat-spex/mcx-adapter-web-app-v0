@@ -1,0 +1,16 @@
+{% set t = d.t %}<div class="dh"><div class="dt"><div class="title mono">{{ t.name }}</div><div class="muted small">{{ t.kind }} tool · {{ d.src_label }}</div></div>
+<span class="dnav js-only"><button class="btn ghost close" type="button" data-prev title="Previous ( ↑ )" aria-label="Previous">{{ icon("chevron-left") }}</button><button class="btn ghost close" type="button" data-next title="Next ( ↓ )" aria-label="Next">{{ icon("chevron-right") }}</button><button class="btn ghost close" type="button" data-dclose title="Close ( Esc )" aria-label="Close details">{{ icon("x") }}</button></span></div>
+<div class="dacts">{% if can_edit %}<a class="btn sm primary" href="/tools/{{ t.name }}" data-drawer="/drawer/tool/{{ t.name|urlencode }}">{{ icon("pencil", 14) }}Edit</a>{% else %}<a class="btn sm primary" href="/tools/{{ t.name }}">Open</a>{% endif %}<a class="btn sm" href="/tools/{{ t.name }}?view=flow">{{ icon("arrow-left-right", 14) }}Flow</a>{% if can_edit %}<a class="btn sm" href="/tools/{{ t.name }}#test-form">{{ icon("play", 14) }}Test</a>{% endif %}</div>
+<div class="pb"><span class="chip {{ {'published': 's-ok', 'changed': 's-warn', 'draft': 's-warn'}[t.state] }}"><span class="dot {{ {'published': 'ok', 'changed': 'warn', 'draft': 'warn'}[t.state] }}"></span>{{ {'published': 'Live', 'changed': 'Changed - publish to update', 'draft': 'Draft - not published'}[t.state] }}</span>{% if not t.enabled %} <span class="chip s-bad">disabled</span>{% endif %}</div>
+<div class="sec">Tool</div>
+<dl class="kv"><dt>Title</dt><dd>{{ t.title or '–' }}</dd><dt>Risk</dt><dd class="{{ t.risk }}">{{ t.risk }} · {{ RISK_INFO[t.risk][0] }}</dd><dt>Version</dt><dd>{{ ('v' ~ t.version) if t.version else '–' }}</dd>
+<dt>Profiles</dt><dd>{{ t.profiles|join(', ') or '–' }}</dd>{% if t.kind == 'curated' %}<dt>Object</dt><dd class="mono">{{ t.object }}</dd>{% endif %}</dl>
+<div class="sec">As the AI sees it</div>
+<div class="pb" style="padding-top:10px"><div class="mono small" style="color:var(--accent-ink);overflow-wrap:anywhere">{{ d.sig }}</div><p class="small" style="margin:6px 0 0">{{ t.description }}</p></div>
+{% if d.params %}<div class="sec">Parameters</div>
+<dl class="kv">{% for p in d.params %}<dt class="mono">{{ p.name }}</dt><dd><span class="muted">{{ p.type }}</span>{% if p.notes %} · {{ p.notes }}{% endif %}</dd>{% endfor %}</dl>{% endif %}
+<div class="sec">Publish check</div>
+<p class="pb small {{ 'warn' if d.check else 'ok' }}" style="padding-top:10px;margin:0">{{ d.check or '✓ Can be published' }}</p>
+<div class="sec">Last calls</div>
+{% if d.last %}<dl class="kv">{% for r in d.last %}<dt class="muted">{{ (r.time or '')[11:19] }}</dt><dd class="{{ result_token.get(r.result, 'muted') if result_token is defined else '' }}">{{ r.result }} · {{ r.rows }} rows · {{ r.ms }} ms{{ ' · test' if r.test }}</dd>{% endfor %}</dl>
+{% else %}<p class="pb muted small" style="padding-top:10px;margin:0">No calls yet</p>{% endif %}

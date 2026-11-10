@@ -29,8 +29,8 @@ The style is a dense, neutral desktop tool, similar to QGIS or VS Code: grey sur
 | `hover` | `#3a3a3a` | `#e5e7eb` | hover background |
 | `text` | `#e6e6e6` | `#1f2937` | primary text |
 | `muted` | `#b0b0b0` | `#4b5563` | secondary text, unselected tabs, table headers, disabled |
-| `accent` | `#f29f43` | `#d97706` | primary / active / focus / selection |
-| `accent_hover` | `#f5b26a` | `#b45309` | primary button hover |
+| `accent` | `#f78e01` | `#f78e01` | primary / active / focus / selection |
+| `accent_hover` | `#f9a43a` | `#e07f00` | primary button hover |
 | `accent_text` | `#1a1a1a` | `#ffffff` | text on accent and on chips |
 | `ok` | `#4ade80` | `#15803d` | success / optimal |
 | `warn` | `#fbbf24` | `#b45309` | warning / dry |
@@ -46,14 +46,14 @@ Surface order in dark mode, from darkest to lightest: `input` < `bg` < `panel2` 
 :root, :root[data-theme="dark"] {
   --bg:#232323; --panel:#2d2d2d; --panel2:#262626; --input:#191919;
   --border:#444444; --hover:#3a3a3a; --text:#e6e6e6; --muted:#b0b0b0;
-  --accent:#f29f43; --accent-hover:#f5b26a; --accent-text:#1a1a1a;
+  --accent:#f78e01; --accent-hover:#f9a43a; --accent-text:#1a1a1a;
   --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; --info:#60a5fa;
   --toast-bg:#e6e6e6; --toast-text:#1a1a1a;
 }
 :root[data-theme="light"] {
   --bg:#f3f4f6; --panel:#ffffff; --panel2:#f9fafb; --input:#ffffff;
   --border:#d1d5db; --hover:#e5e7eb; --text:#1f2937; --muted:#4b5563;
-  --accent:#d97706; --accent-hover:#b45309; --accent-text:#ffffff;
+  --accent:#f78e01; --accent-hover:#e07f00; --accent-text:#1a1a1a;
   --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --info:#1d4ed8;
   --toast-bg:#1f2937; --toast-text:#ffffff;
 }

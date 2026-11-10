@@ -194,7 +194,7 @@ class ToolParam:
     description: str = ""
     required: bool = False
     column: str = ""                # filter: column compared with the value
-    op: str = "="                   # = | >= | <= | > | < | in
+    op: str = "="                   # = | >= | <= | > | < | in | contains (text, LIKE)
     values: list = field(default_factory=list)       # enum choices
     default: object = None
     group: dict = field(default_factory=dict)        # group_by param: choice -> [columns]

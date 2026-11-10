@@ -11,6 +11,7 @@ form / fetch, role checked on every request (viewer < engineer < admin), securit
 """
 from __future__ import annotations
 
+import copy
 import csv
 import datetime as dt
 import io
@@ -37,7 +38,7 @@ from mcx_core.mcp import McpServer, Session
 from mcx_core.model import Model
 from mcx_core.runtime import Runtime
 from mcx_core.safety import RISK_INFO, SafetyError, annotations, check_publishable, risk_level
-from mcx_core.tools import input_schema, new_curated, signature
+from mcx_core.tools import TEMPLATES, fitting_templates, input_schema, new_curated, signature, template_tool
 from mcx_web.icons import icon
 from mcx_web.users import ROLE_HELP, ROLE_TEXT, ROLES, UserStore
 
@@ -49,6 +50,108 @@ PLATFORMS = ["Copilot Studio", "ContextForge", "Docker MCP Gateway", "Claude Des
 CLIENT_KIND = {"ContextForge": "Gateway", "Docker MCP Gateway": "Gateway", "Copilot Studio": "AI platform",
                "Claude Desktop": "Direct (stdio)"}
 STEPS = ["Connect", "Discover", "Expose as MCP tools", "Review & publish"]
+
+
+PAGE_SIZES = (25, 50, 100)
+
+
+class Pager:
+    """Server-side pagination of a list: ?page=N&size=25|50|100 (other query parameters are kept)."""
+
+    def __init__(self, items: list, request: Request, default: int = 25):
+        qp = request.query_params
+        try:
+            self.size = int(qp.get("size", default))
+        except ValueError:
+            self.size = default
+        if self.size not in PAGE_SIZES:
+            self.size = default
+        self.total = len(items)
+        self.pages = max(1, (self.total + self.size - 1) // self.size)
+        try:
+            self.page = min(self.pages, max(1, int(qp.get("page", 1))))
+        except ValueError:
+            self.page = 1
+        self.start = (self.page - 1) * self.size
+        self.items = items[self.start:self.start + self.size]
+        self.end = self.start + len(self.items)
+        self._path = request.url.path
+        self.keep = [(k, v) for k, v in qp.multi_items() if k not in ("page", "size", "ok", "err", "sel")]
+
+    @property
+    def needed(self) -> bool:
+        return self.total > PAGE_SIZES[0]
+
+    def url(self, page: int, size: int | None = None) -> str:
+        from urllib.parse import urlencode
+        return self._path + "?" + urlencode(self.keep + [("page", str(page)), ("size", str(size or self.size))])
+
+    def window(self) -> list:
+        """Page numbers with None for gaps: 1 … 4 5 6 … 12."""
+        out, last = [], 0
+        for n in range(1, self.pages + 1):
+            if n in (1, self.pages) or abs(n - self.page) <= 1:
+                if last and n - last > 1:
+                    out.append(None)
+                out.append(n)
+                last = n
+        return out
+
+
+def nxt(f, default: str) -> str:
+    """Where to go after a form: the posted `back` (same site only) or the default."""
+    b = str(f.get("back", "") or "")
+    return b if b.startswith("/") and not b.startswith("//") else default
+
+
+PARAM_TYPES = ("string", "number", "integer", "boolean", "date", "datetime")
+MEASURE_AGGS = ("avg", "min", "max", "sum", "count", "none")
+
+
+def _fields_to_params(f) -> dict:
+    """The structured tool editor (drawer) -> the same dict the YAML editor produces."""
+    params, measures = [], []
+    for i in range(min(40, int(f.get("p_n", 0) or 0))):
+        name = str(f.get(f"p{i}_name", "")).strip()
+        if not name or f.get(f"p{i}_del") == "on":
+            continue
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$", name):
+            raise ValueError(f"parameter name {name!r}: letters, digits and _ only")
+        desc = str(f.get(f"p{i}_desc", "")).strip()
+        if f.get(f"p{i}_kind") == "group":
+            choices = [x for x in f.getlist(f"p{i}_choices") if x]
+            if not choices:
+                raise ValueError(f"{name}: pick at least one column to group by")
+            dflt = str(f.get(f"p{i}_default", "")) or choices[0]
+            params.append({"name": name, "type": "enum", "description": desc, "group": {x: [x] for x in choices},
+                           "default": dflt if dflt in choices else choices[0]})
+        else:
+            typ = str(f.get(f"p{i}_type", "string"))
+            if typ not in PARAM_TYPES:
+                raise ValueError(f"{name}: unknown type {typ!r}")
+            col = str(f.get(f"p{i}_column", ""))
+            if not col:
+                raise ValueError(f"{name}: pick the column it filters")
+            params.append({"name": name, "type": typ, "description": desc, "column": col,
+                           "op": str(f.get(f"p{i}_op", "=")), "required": f.get(f"p{i}_req") == "on"})
+    for i in range(min(40, int(f.get("m_n", 0) or 0))):
+        col = str(f.get(f"m{i}_column", ""))
+        if not col or f.get(f"m{i}_del") == "on":
+            continue
+        agg = str(f.get(f"m{i}_agg", "avg"))
+        if agg not in MEASURE_AGGS:
+            raise ValueError(f"{col}: unknown aggregate {agg!r}")
+        measures.append({"column": col, "agg": agg, "unit": str(f.get(f"m{i}_unit", "")).strip(),
+                         "label": str(f.get(f"m{i}_label", "")).strip()})
+    columns = [x for x in f.getlist("cols") if x] if not measures else []
+    order = str(f.get("order_by", "")).strip()
+    outs = {(m["label"] or m["column"]).lower() for m in measures} | {x.lower() for x in columns} | \
+        {x.lower() for p_ in params for cs in p_.get("group", {}).values() for x in cs}
+    if order and order.lower() not in outs:
+        raise ValueError(f"order by {order!r}: pick a returned column, a measure or a group column")
+    return {"params": params, "measures": measures, "columns": columns,
+            "order_by": ("-" if order and f.get("order_desc") == "on" else "") + order,
+            "date_column": str(f.get("date_column", ""))}
 
 
 class Redirect(Exception):
@@ -102,7 +205,14 @@ def create_app(console: Console) -> FastAPI:
     app.state.c = console
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=HERE / "templates")
-    tpl.env.globals.update(icon=icon, ROLE_TEXT=ROLE_TEXT, RISK_INFO=RISK_INFO, STEPS=STEPS, version=__version__,
+    def asset(name: str) -> str:
+        """/static/<name>?v=<file time>: a changed CSS / JS file is fetched again, never an old cached copy."""
+        try:
+            return f"/static/{name}?v={int((HERE / 'static' / name).stat().st_mtime)}"
+        except OSError:
+            return f"/static/{name}"
+
+    tpl.env.globals.update(icon=icon, asset=asset, PAGE_SIZES=PAGE_SIZES, ROLE_TEXT=ROLE_TEXT, RISK_INFO=RISK_INFO, STEPS=STEPS, version=__version__,
                            state_token=STATE_TOKEN, result_token=RESULT_TOKEN, risk_level=risk_level)
     tpl.env.filters["fmt"] = lambda n: f"{int(n):,}" if isinstance(n, (int, float)) else n
     tpl.env.filters["profile_short"] = lambda p: p.upper() if len(p) <= 2 else p.capitalize()
@@ -172,9 +282,22 @@ def create_app(console: Console) -> FastAPI:
                    online=on, n_sources=n, pending=len(ready_to_publish(p.tools, p)), server=c.server,
                    mcp_url=p.endpoint.base_url(), ok=request.query_params.get("ok", ""),
                    err=request.query_params.get("err", ""), flash=c.users.flash(token) if token else "",
-                   can_edit=user.can("engineer"), can_admin=user.can("admin"), alarms=alarms())
+                   can_edit=user.can("engineer"), can_admin=user.can("admin"), alarms=alarms(),
+                   pub_list=publish_list())
         ctx.update(kw)
         return tpl.TemplateResponse(request, name, ctx)
+
+    def publish_list() -> list[dict]:
+        out = []
+        for t in c.project.tools:
+            if not t.changed:
+                continue
+            try:
+                check_publishable(t, c.project)
+                out.append({"name": t.name, "state": t.state, "ok": True, "why": ""})
+            except SafetyError as e:
+                out.append({"name": t.name, "state": t.state, "ok": False, "why": str(e).split(": ", 1)[-1]})
+        return out
 
     def alarms() -> list[dict]:
         out = []
@@ -201,6 +324,26 @@ def create_app(console: Console) -> FastAPI:
             return k.client or k.name
         cl = c.rt.clients.get(cid)
         return (cl.name if cl and cl.name else cid)[:28]
+
+    def tool_detail(name: str) -> dict | None:
+        t = c.project.tool(name)
+        if t is None:
+            return None
+        src = c.project.source(t.source)
+        try:
+            check_publishable(t, c.project)
+            check = ""
+        except SafetyError as e:
+            check = str(e).split(": ", 1)[-1]
+        last = [r for r in list(c.rt.audit.recent)[::-1] if r.get("tool") == name and r.get("kind") != "admin"][:5]
+        return {"t": t, "src": src, "src_label": f"{type_label(src)} · {src.name}" if src else "ISA-95 model",
+                "sig": signature(t), "params": _params(t), "check": check, "last": last}
+
+    def audit_record(seq: str):
+        return next((r for r in c.rt.audit.recent if str(r.get("seq")) == str(seq)), None)
+
+    def audit_json(rec) -> str:
+        return json.dumps(rec, indent=2, ensure_ascii=False, default=str)
 
     # ---------------------------------------------------------------- sign in
     @app.get("/setup", response_class=HTMLResponse)
@@ -393,11 +536,17 @@ def create_app(console: Console) -> FastAPI:
                 chk, tok = str(e).split(": ", 1)[-1], "warn"
             review.append({"t": t, "check": chk, "token": tok})
         hist = sorted(((hh, t.name) for t in mine for hh in t.history), key=lambda x: x[0].get("time", ""), reverse=True)[:40]
+        pg = Pager(list(s.items) if tags and step == 1 else (list(s.objects) if step == 1 else rows), request)
+        qp = request.query_params                  # right panel: the clicked table / view (steps 2 and 3)
+        pick_name = qp.get("sel") or (qp.get("obj") if step == 2 else "")
+        dobj = s.object(pick_name) if step in (1, 2) and not tags and pick_name else None
+        dtool = next((t for t in p.tools if dobj and t.source == sid and t.object.lower() == dobj.name.lower()), None)
         return page(request, "source.html", user, csrf, token, f"source:{sid}", s=s, h=h, tags=tags, step=step,
                     done=done, schema=schema, rows=rows, cur=cur, obj=obj, sel=sel, args=args, stats=stats,
                     review=review, hist=hist, pending_here=ready_to_publish(mine, p),
                     sig=signature(cur) if cur else "", params=_params(cur) if cur else [],
-                    ann=annotations(cur) if cur else {}, tz=p.timezone, settings_view=_settings(s, schema))
+                    ann=annotations(cur) if cur else {}, tz=p.timezone, settings_view=_settings(s, schema), pg=pg,
+                    dobj=dobj, dtool=dtool, dd=tool_detail(dtool.name) if dtool else None)
 
     @app.post("/sources/{sid}/settings")
     async def source_settings(request: Request, sid: str):
@@ -419,10 +568,10 @@ def create_app(console: Console) -> FastAPI:
                 try:
                     s.settings[k] = int(v) if t == "int" else float(v) if t == "float" else str(v)
                 except ValueError:
-                    return back(f"/sources/{sid}?step=0", err=f"{fd.get('label', k)}: not a number")
+                    return back(nxt(f, f"/sources/{sid}?step=0"), err=f"{fd.get('label', k)}: not a number")
             c.changed(user, "source.settings", source=sid)
         c.rt.start_source(sid) if s.enabled else c.rt.stop_source(sid)
-        return back(f"/sources/{sid}?step=0", ok="Saved - reconnecting")
+        return back(nxt(f, f"/sources/{sid}?step=0"), ok=f"{s.name}: saved - reconnecting")
 
     @app.post("/sources/{sid}/test")
     async def source_test(request: Request, sid: str):
@@ -473,7 +622,12 @@ def create_app(console: Console) -> FastAPI:
             t = next((t for t in p.tools if t.source == sid and t.object.lower() == o.name.lower()), None)
             if on and t is None:
                 base = "get_" + re.sub(r"[^a-z0-9]+", "_", o.name.split(".")[-1].lower()).strip("_")
-                t = new_curated(p.unique_id(base, {x.name for x in p.tools}), sid, o, [x.id for x in p.profiles])
+                tname, tpl = p.unique_id(base, {x.name for x in p.tools}), str(f.get("template", ""))
+                try:
+                    t = template_tool(tpl, tname, sid, o, [x.id for x in p.profiles]) if tpl in TEMPLATES \
+                        else new_curated(tname, sid, o, [x.id for x in p.profiles])
+                except ValueError as e:
+                    return back(f"/sources/{sid}?step=2&sel={quote(key)}", err=str(e))
                 p.tools.append(t)
             if t is not None:
                 t.enabled = on
@@ -510,14 +664,30 @@ def create_app(console: Console) -> FastAPI:
         for r in c.rt.audit.today():
             if r.get("kind") != "admin":
                 calls[r.get("tool", "")] = calls.get(r.get("tool", ""), 0) + 1
+        qp = request.query_params
+        fk, fs, fr, fp = qp.get("kind", ""), qp.get("state", ""), qp.get("risk", ""), qp.get("profile", "")
+        held = {t.name for t in c.project.tools if t.changed and t not in ready_to_publish([t], c.project)}
         rows = []
         for t in c.project.tools:
             src = c.project.source(t.source)
             if q and q not in t.name and q not in t.object.lower() and q not in t.description.lower():
                 continue
+            st = "held" if t.name in held else ("draft" if t.state != "published" else "published")
+            if (fk and t.kind != fk) or (fr and t.risk != fr) or (fp and fp not in t.profiles) or \
+                    (fs and fs != st and not (fs == "draft" and st == "held")):
+                continue
             rows.append({"t": t, "where": f"{src.name if src else t.source} · {t.object}" if t.kind == "curated"
                          else "ISA-95 model", "calls": calls.get(t.name, 0)})
-        return page(request, "tools.html", user, csrf, token, "tools", rows=rows, q=q)
+        pg = Pager(rows, request)
+        sel = request.query_params.get("sel", "")
+        figs = {"all": len(c.project.tools), "published": sum(t.state == "published" for t in c.project.tools),
+                "draft": sum(t.state != "published" for t in c.project.tools), "held": len(held)}
+        chips = [(k, v, label) for k, v, label in (("kind", fk, "Kind"), ("state", fs, "State"), ("risk", fr, "Risk"),
+                                                   ("profile", fp, "Profile")) if v]
+        return page(request, "tools.html", user, csrf, token, "tools", rows=pg.items, pg=pg, q=q, sel=sel,
+                    figs=figs, chips=chips, fk=fk, fs=fs, fr=fr, fp=fp, held=held, risks=RISKS[:4],
+                    d=tool_detail(sel) if sel else None, n_curated=sum(t.kind == "curated" for t in c.project.tools),
+                    n_draft=sum(t.state != "published" for t in c.project.tools))
 
     @app.get("/tools/{name}", response_class=HTMLResponse)
     def tool_page(request: Request, name: str):
@@ -535,9 +705,37 @@ def create_app(console: Console) -> FastAPI:
             check = ""
         except SafetyError as e:
             check = str(e)
+        view = "flow" if request.query_params.get("view") == "flow" else "form"
         return page(request, "tool.html", user, csrf, token, "tools", t=t, src=src, obj=obj, params_yaml=params_yaml,
+                    view=view, d=tool_detail(name), lim=c.project.limits,
                     sig=signature(t), params=_params(t), ann=annotations(t), args=default_args(t), check=check,
                     columns=[col.name for col in obj.columns if not col.pii] if obj else [], risks=RISKS[:4])
+
+    def tool_form(t, f) -> ToolDef:
+        """The edited draft (a copy): settings + parameters from the structured editor or YAML."""
+        nt = copy.deepcopy(t)
+        nt.title = str(f.get("title", t.title)).strip()
+        nt.description = str(f.get("description", t.description)).strip()
+        if f.get("risk") in RISKS[:4]:
+            nt.risk = f.get("risk")
+        nt.profiles = [x for x in f.getlist("profiles") if c.project.profile(x)]
+        nt.isa95 = str(f.get("isa95", "")).strip().strip("/")
+        nt.enabled = f.get("enabled") == "on"
+        nt.sensitive_ok = f.get("sensitive_ok") == "on" if user_can_r2(f) else t.sensitive_ok
+        if t.kind == "curated":
+            text = None
+            if f.get("mode") == "fields":
+                text = yaml.safe_dump(_fields_to_params(f), sort_keys=False, allow_unicode=True)
+            elif f.get("params_yaml") is not None:
+                text = str(f.get("params_yaml"))
+            if text is not None:
+                parsed = _parse_params(t, text, c.project)
+                for k in ("params", "measures", "columns", "order_by", "date_column"):
+                    setattr(nt, k, getattr(parsed, k))
+        return nt
+
+    def user_can_r2(f) -> bool:
+        return "sensitive_ok_field" in f or "sensitive_ok" in f
 
     @app.post("/tools/{name}")
     async def tool_save(request: Request, name: str):
@@ -545,24 +743,80 @@ def create_app(console: Console) -> FastAPI:
         t = c.project.tool(name)
         if t is None:
             return back("/tools", err=f"No tool {name}")
+        try:
+            nt = tool_form(t, f)
+        except ValueError as e:
+            return back(nxt(f, f"/tools/{name}"), err=str(e))
         with c.lock:
-            t.title = str(f.get("title", t.title)).strip()
-            t.description = str(f.get("description", t.description)).strip()
-            if f.get("risk") in RISKS[:4]:
-                t.risk = f.get("risk")
-            t.profiles = [x for x in f.getlist("profiles") if c.project.profile(x)]
-            t.isa95 = str(f.get("isa95", "")).strip().strip("/")
-            t.enabled = f.get("enabled") == "on"
-            t.sensitive_ok = f.get("sensitive_ok") == "on"
-            if t.kind == "curated" and f.get("params_yaml") is not None:
-                try:
-                    nt = _parse_params(t, str(f.get("params_yaml")), c.project)
-                except ValueError as e:
-                    return back(f"/tools/{name}", err=str(e))
-                for k in ("params", "measures", "columns", "order_by", "date_column"):
-                    setattr(t, k, getattr(nt, k))
+            for k in ("title", "description", "risk", "profiles", "isa95", "enabled", "sensitive_ok",
+                      "params", "measures", "columns", "order_by", "date_column"):
+                setattr(t, k, getattr(nt, k))
             c.changed(user, "tool.edit", tool=name)
-        return back(f"/tools/{name}", ok="Draft saved - publish to make it live")
+        return back(nxt(f, f"/tools/{name}"), ok=f"{name}: draft saved - publish to make it live")
+
+    @app.post("/tools/{name}/check")
+    async def tool_check(request: Request, name: str):
+        """Live publish check while the drawer is being edited (nothing is saved)."""
+        _user, f, _ = await posted(request)
+        t = c.project.tool(name)
+        if t is None:
+            return JSONResponse({"ok": False, "text": "tool not found"})
+        try:
+            nt = tool_form(t, f)
+            check_publishable(nt, c.project)
+        except (ValueError, SafetyError) as e:
+            return JSONResponse({"ok": False, "text": str(e).split(": ", 1)[-1] if isinstance(e, SafetyError) else str(e)})
+        return JSONResponse({"ok": True, "text": "Can be published", "sig": signature(nt)})
+
+    @app.post("/bulk/tools")
+    async def tools_bulk(request: Request):
+        user, f, _ = await posted(request)
+        names = [n for n in f.getlist("tool") if c.project.tool(n)]
+        action, prof = str(f.get("action", "")), str(f.get("profile", ""))
+        to = nxt(f, "/tools")
+        if not names:
+            return back(to, err="Tick at least one tool")
+        if action == "publish":
+            errors: list = []
+            with c.lock:
+                c.rt.user = user.username
+                done = c.rt.publish(names, errors=errors)
+                if done:
+                    c.changed(user, "tools.publish", tools=done)
+            msg = f"Published {len(done)} tool(s)" + ("; held back: " + ", ".join(n for n, _e in errors) if errors else "")
+            return back(to, ok=msg) if done else back(to, err=msg)
+        with c.lock:
+            n = 0
+            for name in names:
+                t = c.project.tool(name)
+                if action in ("enable", "disable"):
+                    t.enabled = action == "enable"
+                elif action in ("add_profile", "remove_profile") and c.project.profile(prof):
+                    t.profiles = sorted(set(t.profiles) | {prof}) if action == "add_profile" else \
+                        [x for x in t.profiles if x != prof]
+                elif action == "delete" and t.kind == "curated":
+                    c.project.tools.remove(t)
+                else:
+                    continue
+                n += 1
+            if not n:
+                return back(to, err="Nothing changed (generic tools cannot be deleted)")
+            c.changed(user, f"tools.{action}", tools=names, profile=prof)
+        c.rt.notify_tools_changed()
+        return back(to, ok=f"{action.replace('_', ' ')}: {n} tool(s)" + (" - publish to make it live"
+                                                                        if action != "delete" else ""))
+
+    @app.get("/export/tools.csv")
+    def tools_export(request: Request):
+        who(request, "engineer")
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["name", "kind", "title", "source", "object", "risk", "state", "version", "profiles", "enabled"])
+        for t in c.project.tools:
+            w.writerow([t.name, t.kind, t.title, t.source, t.object, t.risk, t.state, t.version,
+                        " ".join(t.profiles), t.enabled])
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=tools_{time.strftime('%Y%m%d')}.csv"})
 
     @app.post("/tools/{name}/test")
     async def tool_test(request: Request, name: str):
@@ -657,8 +911,10 @@ def create_app(console: Console) -> FastAPI:
         with c.lock:
             c.project.profiles.append(Profile(pid, str(f.get("title", "")).strip() or pid, "",
                                               f.get("max_risk") if f.get("max_risk") in RISKS[:4] else "R1"))
+            c.project.profile(pid).description = str(f.get("description", "")).strip()
+            c.project.profile(pid).scope = str(f.get("scope", "")).strip().strip("/")
             c.changed(user, "profile.add", profile=pid)
-        return back(f"/profiles?p={pid}", ok=f"Profile {pid} created - endpoint {c.project.endpoint.path}/{pid}")
+        return back(nxt(f, f"/profiles?p={pid}"), ok=f"Profile {pid} created - endpoint {c.project.endpoint.path}/{pid}")
 
     @app.post("/profiles/{pid}")
     async def profile_save(request: Request, pid: str):
@@ -674,7 +930,7 @@ def create_app(console: Console) -> FastAPI:
                 x.max_risk = f.get("max_risk")
             c.changed(user, "profile.edit", profile=pid)
         c.rt.notify_tools_changed()
-        return back(f"/profiles?p={pid}", ok="Profile saved")
+        return back(nxt(f, f"/profiles?p={pid}"), ok=f"Profile {pid} saved")
 
     @app.post("/profiles/{pid}/toggle")
     async def profile_toggle(request: Request, pid: str):
@@ -787,7 +1043,18 @@ def create_app(console: Console) -> FastAPI:
     def safety(request: Request):
         user, csrf, token = who(request)
         srcs = [s for s in c.project.sources if family(s) == "table"]
-        return page(request, "safety.html", user, csrf, token, "safety", lim=c.project.limits, srcs=srcs)
+        pairs = [(s, o) for s in srcs for o in s.objects]
+        pg = Pager(pairs, request)
+        groups: list = []
+        for s, o in pg.items:
+            if not groups or groups[-1]["s"] is not s:
+                groups.append({"s": s, "objs": [], "type": type_label(s), "icon": ADAPTERS[s.type].ICON
+                               if s.type in ADAPTERS else "database",
+                               "n_exp": sum(x.exposed for x in s.objects), "n_hid": sum(not x.exposed for x in s.objects),
+                               "n_pii": sum(len(x.pii_columns()) for x in s.objects)})
+            groups[-1]["objs"].append(o)
+        return page(request, "safety.html", user, csrf, token, "safety", lim=c.project.limits, srcs=srcs,
+                    groups=groups, pg=pg)
 
     @app.post("/safety/limits")
     async def limits_save(request: Request):
@@ -811,13 +1078,18 @@ def create_app(console: Console) -> FastAPI:
     async def pii_save(request: Request):
         user, f, _ = await posted(request)
         marked = set(f.getlist("pii"))
+        seen = set(f.getlist("seen"))              # columns shown on this page: others keep their flag
         with c.lock:
             for s in c.project.sources:
                 if family(s) != "table":
                     continue
                 for o in s.objects:
                     for col in o.columns:
-                        col.pii = f"{s.id}|{o.name}|{col.name}" in marked
+                        key = f"{s.id}|{o.name}|{col.name}"
+                        if not seen or key in seen:
+                            col.pii = key in marked
+            marked = {f"{s.id}|{o.name}|{col.name}" for s in c.project.sources for o in s.objects
+                      for col in o.columns if col.pii}
             c.changed(user, "pii.edit", structure=False, columns=len(marked))
         return back("/safety", ok=f"{len(marked)} personal-data columns - never returned")
 
@@ -836,17 +1108,13 @@ def create_app(console: Console) -> FastAPI:
             recs = [r for r in recs if r.get("result") == result]
         if q:
             recs = [r for r in recs if q in json.dumps(r, default=str).lower()]
-        page_n = max(1, int(qp.get("page", 1) or 1))
-        per = 50
-        shown = recs[(page_n - 1) * per: page_n * per]
-        sel = None
-        if qp.get("seq"):
-            sel = next((r for r in c.rt.audit.recent if str(r.get("seq")) == qp.get("seq")), None)
+        pg = Pager(recs, request, default=50)
+        shown = recs[pg.start:pg.end]
+        sel = audit_record(qp.get("sel") or qp.get("seq") or "") if (qp.get("sel") or qp.get("seq")) else None
         today = [r for r in c.rt.audit.today() if r.get("kind") != "admin"]
         chain = app.state.chain if getattr(app.state, "chain", None) else None
-        return page(request, "audit.html", user, csrf, token, "audit", recs=shown, total=len(recs), page_n=page_n,
-                    pages=max(1, (len(recs) + per - 1) // per), result=result, q=q, kind=kind, sel=sel,
-                    sel_json=json.dumps(sel, indent=2, ensure_ascii=False, default=str) if sel else "",
+        return page(request, "audit.html", user, csrf, token, "audit", recs=shown, total=len(recs), pg=pg,
+                    result=result, q=q, kind=kind, sel=sel, sel_json=audit_json(sel) if sel else "",
                     today=today, blocked=sum(r.get("result") == "blocked" for r in today),
                     errors=sum(r.get("result") == "error" for r in today), chain=chain,
                     folder=str(c.rt.audit.folder))
@@ -887,7 +1155,7 @@ def create_app(console: Console) -> FastAPI:
             u = c.users.create(str(f.get("username", "")), str(f.get("password", "")), str(f.get("role", "viewer")),
                                str(f.get("name", "")))
         except ValueError as e:
-            return back("/users", err=str(e))
+            return back(nxt(f, "/users"), err=str(e))
         c.rt.audit.write(client=user.username, via="web", kind="admin", tool="user.create",
                          args={"user": u.username, "role": u.role}, rows=0, ms=0, result="ok")
         return back("/users", ok=f"User {u.username} created ({u.role_text})")
@@ -908,6 +1176,11 @@ def create_app(console: Console) -> FastAPI:
                 c.users.update(uid, active=True)
             elif action == "password":
                 c.users.set_password(uid, str(f.get("password", "")), token if uid == user.id else None)
+            elif action == "edit":                       # the drawer: name, role, active, optional password
+                c.users.update(uid, role=str(f.get("role")), active=f.get("active") == "on" or uid == user.id,
+                               name=str(f.get("name", "")).strip())
+                if str(f.get("password", "")):
+                    c.users.set_password(uid, str(f.get("password")), token if uid == user.id else None)
             elif action == "delete":
                 if uid == user.id:
                     return back("/users", err="You cannot delete yourself")
@@ -919,7 +1192,7 @@ def create_app(console: Console) -> FastAPI:
         c.rt.audit.write(client=user.username, via="web", kind="admin", tool=f"user.{action}",
                          args={"user": target.username, **({"role": f.get("role")} if action == "role" else {})},
                          rows=0, ms=0, result="ok")
-        return back("/users", ok=f"{target.username}: {action} done")
+        return back(nxt(f, "/users"), ok=f"{target.username}: {'saved' if action == 'edit' else action + ' done'}")
 
     @app.get("/account", response_class=HTMLResponse)
     def account(request: Request):
@@ -962,6 +1235,163 @@ def create_app(console: Console) -> FastAPI:
             c.changed(user, "licence.edit", edition=lic.edition)
         c.rt.notify_tools_changed()
         return back("/licence", ok="Licence saved")
+
+    # ---------------------------------------------------------------- project settings
+    @app.get("/project", response_class=HTMLResponse)
+    def project_page(request: Request):
+        user, csrf, token = who(request)
+        import zoneinfo
+        return page(request, "project.html", user, csrf, token, "project", path=str(c.path),
+                    zones=sorted(zoneinfo.available_timezones()))
+
+    @app.post("/project")
+    async def project_save(request: Request):
+        user, f, _ = await posted(request)
+        import zoneinfo
+        name, site = str(f.get("name", "")).strip(), str(f.get("site", "")).strip().strip("/")
+        tz, desc = str(f.get("timezone", "")).strip() or "UTC", str(f.get("description", "")).strip()
+        if not name:
+            return back("/project", err="The project needs a name")
+        try:
+            zoneinfo.ZoneInfo(tz)
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            return back("/project", err=f"Unknown time zone {tz!r} - use an IANA name such as Asia/Bangkok")
+        p = c.project
+        with c.lock:
+            p.name, p.site, p.timezone, p.description = name[:120], site[:120], tz, desc[:1000]
+            c.changed(user, "project.edit", name=p.name, site=p.site, timezone=tz)
+        return back("/project", ok="Project saved - times now use " + tz)
+
+    # ---------------------------------------------------------------- search (top bar)
+    @app.get("/api/search")
+    def search(request: Request):
+        user, _csrf, _token = who(request)
+        q = request.query_params.get("q", "").strip().lower()
+        if not q:
+            return JSONResponse({"groups": []})
+        p, groups = c.project, []
+
+        def hit(*texts) -> bool:
+            return any(q in (t or "").lower() for t in texts)
+
+        tools = [{"label": t.name, "detail": f"{t.risk} · {t.state}", "href": f"/tools?sel={quote(t.name)}"}
+                 for t in p.tools if hit(t.name, t.title, t.description, t.object)]
+        srcs = [{"label": s.name, "detail": type_label(s), "href": f"/sources/{s.id}"}
+                for s in p.sources if hit(s.name, s.id, type_label(s))]
+        objs = [{"label": o.name, "detail": f"{s.name} · {o.kind}" + (" · exposed" if o.exposed else ""),
+                 "href": f"/sources/{s.id}?step=2&obj={quote(o.name)}"}
+                for s in p.sources for o in s.objects if hit(o.name)]
+        cols = [{"label": f"{o.name}.{col.name}", "detail": f"{s.name} · {col.type}" + (" · personal" if col.pii else ""),
+                 "href": f"/sources/{s.id}?step=2&obj={quote(o.name)}"}
+                for s in p.sources for o in s.objects for col in o.columns if hit(col.name)]
+        profs = [{"label": x.id, "detail": x.title, "href": f"/profiles?p={quote(x.id)}"}
+                 for x in p.profiles if hit(x.id, x.title)]
+        nav = [("Overview", "/"), ("Add source", "/sources/new"), ("Plant model · ISA-95", "/model"),
+               ("Tools", "/tools"), ("Tool profiles", "/profiles"), ("MCP endpoint", "/endpoint"),
+               ("Safety & limits", "/safety"), ("Audit log", "/audit"), ("Project settings", "/project"),
+               ("Licence", "/licence"), ("Account", "/account")]
+        if user.can("admin"):
+            nav.append(("Users & roles", "/users"))
+        pages = [{"label": t, "detail": "page", "href": h} for t, h in nav if hit(t)]
+        for title, items in (("Tools", tools), ("Sources", srcs), ("Tables / views", objs), ("Columns", cols),
+                             ("Profiles", profs), ("Pages", pages)):
+            if items:
+                groups.append({"title": title, "items": items[:6]})
+        return JSONResponse({"groups": groups}, headers={"Cache-Control": "no-store"})
+
+    # ---------------------------------------------------------------- right-panel details (HTML fragments)
+    def fragment(request: Request, name: str, user, csrf, **kw):
+        ctx = dict(user=user, csrf=csrf, project=c.project, can_edit=user.can("engineer"),
+                   can_admin=user.can("admin"))
+        ctx.update(kw)
+        return tpl.TemplateResponse(request, name, ctx, headers={"Cache-Control": "no-store"})
+
+    @app.get("/drawer/{kind}/{key}", response_class=HTMLResponse)
+    def drawer(request: Request, kind: str, key: str):
+        """Add / edit forms shown in the drawer. Each posts to the normal route (CSRF, role, audit)."""
+        need = "admin" if kind in ("user", "key") else "engineer"
+        user, csrf, _token = who(request, need)
+        p, ctx = c.project, {"kind": kind, "new": key == "new", "back": nxt(request.query_params, "")}
+        if kind == "tool":
+            t = p.tool(key)
+            if t is None:
+                return HTMLResponse("<p class='pb muted'>Tool not found</p>", status_code=404)
+            src = p.source(t.source)
+            obj = src.object(t.object) if src else None
+            d = asdict(t)
+            ctx.update(t=t, obj=obj, cols=[x for x in obj.columns if not x.pii] if obj else [], risks=RISKS[:4],
+                       params_yaml=yaml.safe_dump({k: d[k] for k in ("params", "measures", "columns", "order_by",
+                                                                     "date_column")}, sort_keys=False, allow_unicode=True),
+                       ptypes=PARAM_TYPES, aggs=MEASURE_AGGS, ops=("=", ">=", "<=", ">", "<", "contains"),
+                       sig=signature(t))
+        elif kind == "source":
+            if key == "new":
+                cats: dict = {}
+                for k, cls in ADAPTERS.items():
+                    cats.setdefault(cls.CATEGORY, []).append({"type": k, "label": cls.LABEL, "icon": cls.ICON})
+                ctx.update(cats=cats)
+            else:
+                s = p.source(key)
+                if s is None:
+                    return HTMLResponse("<p class='pb muted'>Source not found</p>", status_code=404)
+                cls = ADAPTERS.get(s.type)
+                ctx.update(s=s, settings_view=_settings(s, list(cls.SCHEMA) if cls else []), type_label=type_label(s))
+        elif kind == "profile":
+            ctx.update(x=None if key == "new" else p.profile(key), risks=RISKS[:4])
+        elif kind == "user":
+            ctx.update(u=None if key == "new" else c.users.get(int(key)) if key.isdigit() else None, roles=ROLES,
+                       role_help=ROLE_HELP)
+        elif kind == "key":
+            ctx.update(profiles=p.profiles)
+        elif kind == "template":
+            s = p.source(key)
+            o = s.object(request.query_params.get("obj", "")) if s else None
+            if o is None:
+                return HTMLResponse("<p class='pb muted'>Object not found</p>", status_code=404)
+            cards = []
+            for k, (title, text, ic) in TEMPLATES.items():
+                fits = k in fitting_templates(o)
+                sig = ""
+                if fits:
+                    try:
+                        sig = signature(template_tool(k, "get_" + re.sub(r"[^a-z0-9]+", "_", o.name.split(".")[-1].lower())
+                                                      .strip("_"), s.id, o, []))
+                    except ValueError:
+                        fits = False
+                cards.append({"k": k, "title": title, "text": text, "icon": ic, "fits": fits, "sig": sig})
+            ctx.update(s=s, o=o, cards=cards)
+        else:
+            return HTMLResponse("<p class='pb muted'>Unknown form</p>", status_code=404)
+        return fragment(request, "_drawer.html", user, csrf, **ctx)
+
+    @app.get("/detail/tool/{name}", response_class=HTMLResponse)
+    def detail_tool(request: Request, name: str):
+        user, csrf, _token = who(request)
+        d = tool_detail(name)
+        if d is None:
+            return HTMLResponse("<p class='pb muted'>Tool not found</p>", status_code=404)
+        return fragment(request, "_detail_tool.html", user, csrf, d=d)
+
+    @app.get("/detail/audit/{seq}", response_class=HTMLResponse)
+    def detail_audit(request: Request, seq: str):
+        user, csrf, _token = who(request)
+        sel = audit_record(seq)
+        if sel is None:
+            return HTMLResponse("<p class='pb muted'>Record not found (older than the in-memory window)</p>",
+                                status_code=404)
+        return fragment(request, "_detail_audit.html", user, csrf, sel=sel, sel_json=audit_json(sel))
+
+    @app.get("/detail/object/{sid}", response_class=HTMLResponse)
+    def detail_object(request: Request, sid: str):
+        user, csrf, _token = who(request)
+        s = c.project.source(sid)
+        o = s.object(request.query_params.get("name", "")) if s else None
+        if o is None:
+            return HTMLResponse("<p class='pb muted'>Object not found</p>", status_code=404)
+        t = next((t for t in c.project.tools if t.source == sid and t.object.lower() == o.name.lower()), None)
+        return fragment(request, "_detail_object.html", user, csrf, s=s, o=o, t=t,
+                        d=tool_detail(t.name) if t else None,
+                        step=int(request.query_params.get("step", 1) or 1))
 
     return app
 
@@ -1054,7 +1484,7 @@ def _parse_params(t, text: str, project) -> ToolDef:
     for p in nt.params:
         for cs in p.group.values():
             used |= {x.lower() for x in cs}
-        if p.op not in ("=", ">=", "<=", ">", "<", "in"):
+        if p.op not in ("=", ">=", "<=", ">", "<", "in", "contains"):
             raise ValueError(f"{p.name}: operator {p.op!r} not allowed")
     bad = sorted(u for u in used if cols and u not in cols and u != "*")
     if bad:

@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "_macros.html" import kpi with context %}
+{% extends "base.html" %}{% from "_macros.html" import kpi, row_actions, csrf_field with context %}
 {% block title %}Overview{% endblock %}
 {% block content %}
 <div class="crumb">{{ project.name }} / Overview</div>
@@ -16,17 +16,17 @@
 </div>
 <div class="grid2">
 <div class="col">
-<section class="panel"><div class="ph"><span class="muted">Connected clients</span><span class="note">any MCP gateway or AI platform</span></div>
+<section class="panel" id="clients"><div class="ph"><span class="muted">Connected clients</span><span class="note">any MCP gateway or AI platform</span></div>
 <div class="tbox"><table class="t"><thead><tr><th>Client</th><th>Via</th><th>Profile</th><th>Auth</th><th class="r">Calls today</th></tr></thead><tbody>
 {% for cl in clients %}<tr class="{{ 'dim' if cl.dim }}"><td><b>{{ cl.name }}</b></td><td class="muted">{{ cl.via }}</td><td class="mono">{{ cl.profile }}</td><td class="muted">{{ cl.auth }}</td><td class="r">{{ cl.calls|fmt }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">No clients yet - see Tool profiles › Connect a client</td></tr>{% endfor %}
 </tbody></table></div></section>
-<section class="panel"><div class="ph"><span class="muted">Sources</span><span class="note">read-only connections</span></div>
-<div class="tbox"><table class="t"><thead><tr><th>Source</th><th>Type</th><th>Status</th><th class="r">Latency</th><th>Discovered</th></tr></thead><tbody>
-{% for s in nav_sources %}<tr class="link" data-href="/sources/{{ s.id }}"><td><a href="/sources/{{ s.id }}"><b>{{ s.name }}</b></a></td><td class="muted">{{ s.type }}</td>
+<section class="panel"><div class="ph"><span class="muted">Sources</span><span class="note">read-only connections</span>{% if can_edit %}<a class="btn xs" href="/sources/new" data-drawer="/drawer/source/new">{{ icon("plus", 14) }}Add</a>{% endif %}</div>
+<div class="tbox"><table class="t"><thead><tr><th>Source</th><th>Type</th><th>Status</th><th class="r">Latency</th><th>Discovered</th>{% if can_edit %}<th class="acts"><span class="sr">Actions</span></th>{% endif %}</tr></thead><tbody>
+{% for s in nav_sources %}<tr class="link" data-href="/sources/{{ s.id }}" {% if can_edit %}data-edit="/drawer/source/{{ s.id }}"{% endif %} tabindex="0"><td><a href="/sources/{{ s.id }}"><b>{{ s.name }}</b></a></td><td class="muted">{{ s.type }}</td>
 <td class="{{ s.token }}" title="{{ s.msg }}"><span class="dot {{ s.token }}"></span> {{ s.state if s.state != 'error' else (s.msg.split(':')[-1].strip()[:24] or 'error') }}</td>
 <td class="r">{{ (s.lat|round|int ~ ' ms') if s.lat else '–' }}</td>
-<td class="muted">{% set n = s.cfg.objects|length or s.cfg.items|length %}{{ n|fmt if n else '–' }} {{ 'objects' if s.cfg.objects else ('items' if n else '') }}</td></tr>{% endfor %}
+<td class="muted">{% set n = s.cfg.objects|length or s.cfg.items|length %}{{ n|fmt if n else '–' }} {{ 'objects' if s.cfg.objects else ('items' if n else '') }}</td>{% if can_edit %}{{ row_actions("/drawer/source/" ~ s.id, "/sources/" ~ s.id ~ "?step=0", [{"label": "Open", "href": "/sources/" ~ s.id, "icon": "chevron-right"}, {"label": "Test connection", "href": "/sources/" ~ s.id ~ "?step=0", "icon": "plug"}, {"label": "Re-discover", "post": "/sources/" ~ s.id ~ "/discover", "icon": "refresh"}, {"label": "Restart", "post": "/sources/" ~ s.id ~ "/restart", "icon": "refresh"}, {"label": "Delete", "post": "/sources/" ~ s.id ~ "/delete", "icon": "trash", "danger": true, "confirm": "Delete " ~ s.name ~ " and its tools? Clients stop seeing them."}]) }}{% endif %}</tr>{% endfor %}
 </tbody></table></div></section>
 </div>
 <div class="col">

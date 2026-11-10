@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}Project settings{% endblock %}
+{% block content %}
+<div class="crumb">{{ project.name }} / Project settings</div>
+<div class="head"><div><h1>Project settings</h1><p>Name, plant site and time zone of this adapter · every change is saved and audited</p></div></div>
+<div class="grid2">
+<section class="panel"><div class="ph"><h2>Project</h2><span class="note">{{ 'engineers and admins can edit' if not can_edit else 'shown in the sidebar' }}</span></div>
+<form method="post" action="/project" class="pb">{{ csrf_field() }}{% set d = '' if can_edit else 'disabled' %}
+<div class="form">
+<label for="p-name">Name</label><input id="p-name" name="name" value="{{ project.name }}" maxlength="120" required {{ d }}>
+<label for="p-site" title="Top of the ISA-95 path, e.g. Bangkok - new sources start with it">Site</label><input id="p-site" name="site" value="{{ project.site }}" maxlength="120" placeholder="e.g. Bangkok" {{ d }}>
+<label for="p-tz" title="IANA time zone - plant local time for dates in every tool">Plant time zone</label><span><input id="p-tz" name="timezone" value="{{ project.timezone or 'UTC' }}" list="tz-list" autocomplete="off" placeholder="e.g. Asia/Bangkok" {{ d }}>
+<datalist id="tz-list">{% for z in zones %}<option value="{{ z }}">{% endfor %}</datalist></span>
+<label for="p-desc">Description</label><textarea id="p-desc" name="description" rows="3" maxlength="1000" {{ d }}>{{ project.description }}</textarea>
+</div>
+{% if can_edit %}<div class="row" style="margin-top:14px"><button class="btn primary">Save project</button></div>{% endif %}
+</form></section>
+<section class="panel"><div class="ph"><h2>How these are used</h2></div>
+<dl class="kv" style="padding-bottom:14px"><dt>Site</dt><dd>Every <b>new</b> source starts with it as its ISA-95 context, and it's shown under the project name. Existing sources keep their own context (set it on each source's Connect step).</dd>
+<dt>Plant time zone</dt><dd>Dates and times in tool arguments and answers are read and written in this zone. Changing it affects the next call.</dd>
+<dt>Project file</dt><dd class="mono small">{{ path }}</dd></dl></section>
+</div>
+{% endblock %}

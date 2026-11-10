@@ -1,56 +1,127 @@
-{% from "_macros.html" import csrf_field, post_button with context %}<!doctype html>
+{% from "_macros.html" import csrf_field, post_button with context %}{% set side_html = self.side()|trim %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf" content="{{ csrf }}">
 <title>{% block title %}{% endblock %} · MCX Adapter</title>
-<link rel="stylesheet" href="/static/mcx.css">
+<link rel="stylesheet" href="{{ asset('mcx.css') }}">
 <link rel="icon" href="/static/mcx.svg">
-<script src="/static/mcx.js"></script>
+<script src="{{ asset('mcx.js') }}"></script>
 </head>
 <body>
 <div class="app">
 <header class="top">
-<a class="brand" href="/"><span>MCX</span> Adapter</a>
-<span class="proj">{{ project.name }}{% if project.site %} · {{ project.site }}{% endif %}</span>
-<form class="search" action="/tools" method="get" role="search"><label class="sr" for="q">Search tools</label>
-<input id="q" name="q" type="search" placeholder="Search tools"></form>
-<div class="grow"></div>
-<span id="mcp-chip" class="chip {{ 's-ok' if server.running else 's-bad' }}"><span class="dot {{ 'ok' if server.running else 'bad' }}"></span> {{ 'MCP ready' if server.running else 'MCP stopped' }}</span>
-{% if can_edit %}<form method="post" action="/publish" class="inline">{{ csrf_field() }}<input type="hidden" name="back" value="{{ request.url.path }}">
-<button class="btn primary" {% if not pending %}disabled{% endif %}>{{ icon("upload") }}Publish <span id="pub-count">{% if pending %}({{ pending }}){% endif %}</span></button></form>{% endif %}
-{% if alarms %}<a class="btn ghost" href="/#alarms">{{ icon("bell") }}{{ alarms|length }}</a>{% endif %}
-<button class="btn ghost" id="theme-btn" type="button">{{ icon("contrast") }} Dark</button>
-<a class="btn ghost" href="/account" title="Account">{{ icon("user") }}{{ user.username }} · {{ user.role_text }}</a>
-<form method="post" action="/logout" class="inline">{{ csrf_field() }}<button class="btn ghost" aria-label="Sign out">{{ icon("log-out") }}</button></form>
+<div class="tl"><a class="brand" href="/"><span>MCX</span> Adapter</a>
+<nav class="crumbs" aria-label="Project"><span class="sl">/</span><a href="/project" class="cb" title="Project settings">{{ project.name }}</a><span class="sl">/</span><a href="/project" class="cb muted" title="Site and plant time zone">{{ project.site or 'Site not set' }} · {{ project.timezone or 'UTC' }}</a><a href="/licence" class="pill" title="Licence edition">{{ project.licence.edition }}</a></nav></div>
+<div class="tc"><form class="search" action="/tools" method="get" role="search" data-search>
+{{ icon("search") }}<label class="sr" for="q">Search tools, sources, tables</label>
+<input id="q" name="q" type="search" placeholder="Search tools, sources, tables…" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-res"><kbd class="kbd">Ctrl K</kbd>
+<div id="search-res" class="sres" role="listbox" aria-label="Search results" hidden></div></form></div>
+<div class="tr">
+<a class="btn xs outline connect" href="/profiles" title="Connect an AI client or gateway">{{ icon("arrow-left-right", 14) }}<span class="lbl">Connect a client</span></a>
+<span id="mcp-chip" class="chip {{ 's-ok' if server.running else 's-bad' }}" title="MCP endpoint {{ 'ready' if server.running else 'stopped' }}"><span class="dot {{ 'ok' if server.running else 'bad' }}"></span><span class="lbl"> {{ 'MCP ready' if server.running else 'MCP stopped' }}</span></span>
+{% if can_edit %}{% set ready = pub_list|selectattr('ok')|list %}
+<details class="menu pubmenu" data-menu><summary class="btn xs {{ 'primary' if ready else 'outline' }}" title="{{ 'Publish ' ~ ready|length ~ ' change(s)' if ready else 'Everything is live' }}">{{ icon("upload", 14) }}Publish{% if ready %}<span class="cnt-pill" id="pub-count">{{ ready|length }}</span>{% else %}<span id="pub-count"></span>{% endif %}</summary>
+<div class="menu-pop wide">{% if pub_list %}<form method="post" action="/publish">{{ csrf_field() }}<input type="hidden" name="back" value="{{ request.url.path }}">
+<div class="mh"><b>Ready to publish</b><span class="muted small">clients get the new list at once (tools/list_changed)</span></div>
+{% for x in pub_list %}<label class="pubrow {{ '' if x.ok else 'off' }}"><input type="checkbox" name="tool" value="{{ x.name }}" {{ 'checked' if x.ok else 'disabled' }}><span class="mono">{{ x.name }}</span><span class="chip {{ 's-warn' if x.ok else 's-bad' }}">{{ x.state if x.ok else 'held back' }}</span>{% if not x.ok %}<span class="why small">{{ x.why }}</span>{% endif %}</label>{% endfor %}
+{% if ready %}<div class="mf"><button class="btn sm primary">{{ icon("upload", 14) }}Publish {{ ready|length }}</button></div>{% endif %}</form>
+{% else %}<div class="mh"><b>Everything is live</b><span class="muted small">edit a tool and it shows up here</span></div>{% endif %}</div></details>{% endif %}
+{% if alarms %}<a class="btn ghost xs" href="/#alarms" title="Alarms">{{ icon("bell", 15) }}{{ alarms|length }}</a>{% endif %}
+{% if side_html %}<button class="btn ghost xs" id="side-btn" type="button" aria-controls="side" aria-expanded="true" title="Show / hide the right panel ( ] )">{{ icon("panel-right", 15) }}<span class="sr">Right panel</span></button>{% endif %}
+<details class="menu" data-menu><summary class="avatar" title="{{ user.username }} · {{ user.role_text }}">{{ ((user.name or user.username)[:1] ~ ((user.name or '').split(' ')[1][:1] if (user.name or '').split(' ')|length > 1 else ''))|upper }}</summary>
+<div class="menu-pop"><div class="mh"><b>{{ user.name or user.username }}</b><span class="muted small">{{ user.username }} · {{ user.role_text }}</span></div>
+<a href="/account">{{ icon("user") }}Account &amp; password</a>{% if can_admin %}<a href="/users">{{ icon("users") }}Users &amp; roles</a>{% endif %}
+<div class="mg">Theme</div>
+<div class="theme-pick" role="radiogroup" aria-label="Theme"><button type="button" class="mi" data-theme-set="system" role="radio">System</button><button type="button" class="mi" data-theme-set="dark" role="radio">Dark</button><button type="button" class="mi" data-theme-set="light" role="radio">Light</button></div>
+<a href="/project" class="sep">{{ icon("calendar") }}<span class="grow">Plant time</span><span class="muted small">{{ project.timezone or 'UTC' }}</span></a>
+<form method="post" action="/logout" class="sep">{{ csrf_field() }}<button class="mi" type="submit">{{ icon("log-out") }}Sign out</button></form></div></details>
+</div>
 </header>
 <div class="body">
+{% set sec = 'sources' if active in ('sources', 'model') or active.startswith('source:') else
+   ('connect' if active.startswith('profile') or active == 'endpoint' else
+   ('settings' if active in ('project', 'licence', 'users', 'account') else
+   (active if active in ('overview', 'tools', 'safety', 'audit') else 'overview'))) %}
+{% set here = request.url.path ~ ('?' ~ request.url.query if request.url.query else '') %}
+{% set off = nav_sources|selectattr('state', 'equalto', 'error')|list %}
+{% set first_src = '/sources/' ~ nav_sources[0].id if nav_sources else ('/sources/new' if can_edit else '/') %}
+{% macro ri(href, label, ic, on, extra='') %}<a href="{{ href }}" class="{{ 'on' if on }}" title="{{ label }}" aria-label="{{ label }}">{{ icon(ic) }}<span class="nl">{{ label }}</span>{{ extra }}</a>{% endmacro %}
+{% macro mi(href, label, on=false, cnt=None, badge=None, attrs='') %}<a href="{{ href }}" class="{{ 'on' if on }}" {{ attrs }}><span class="nl">{{ label }}</span>{% if badge %}<span class="new">{{ badge }}</span>{% endif %}{% if cnt is not none %}<span class="cnt">{{ cnt }}</span>{% endif %}</a>{% endmacro %}
 <nav class="nav" aria-label="Adapter">
-<a href="/" class="{{ 'on' if active == 'overview' }}">{{ icon("house") }}Overview</a>
-<a href="{{ '/sources/new' if can_edit else '/' }}" class="{{ 'on' if active == 'sources' }}">{{ icon("plug") }}Sources<span class="cnt">{{ online }} / {{ n_sources }}</span></a>
-<div class="sub">
-{% for s in nav_sources %}<a href="/sources/{{ s.id }}" class="{{ 'on' if active == 'source:' ~ s.id }}" title="{{ s.msg or s.state }}"><span class="dot {{ s.token }}"></span>{{ s.type }} · {{ s.name }}</a>{% endfor %}
-{% if can_edit %}<a href="/sources/new" class="muted">{{ icon("plus", 14) }}Add source</a>{% endif %}
+<div class="rail" aria-label="Sections">
+<div class="rg">{{ ri('/', 'Overview', 'house', sec == 'overview') }}
+{{ ri(first_src, 'Sources', 'plug', sec == 'sources', ('<span class="ndot" title="a source is offline"></span>'|safe if off else '') ~ ('<span class="cnt">' ~ online ~ '/' ~ n_sources ~ '</span>')|safe) }}
+{{ ri('/model', 'Plant model', 'layers', active == 'model') }}</div>
+<div class="rg">{{ ri('/tools', 'Tools', 'wrench', sec == 'tools', ('<span class="cnt">' ~ summary.tools ~ '</span>')|safe) }}
+{{ ri('/profiles', 'Connect', 'arrow-left-right', sec == 'connect') }}</div>
+<div class="rg">{{ ri('/safety', 'Safety & limits', 'shield', sec == 'safety') }}
+{{ ri('/audit', 'Audit log', 'file-text', sec == 'audit') }}</div>
+<div class="rg">{% if can_admin %}{{ ri('/users', 'Users & roles', 'users', active == 'users') }}{% endif %}
+{{ ri('/licence', 'Licence', 'key-round', active == 'licence', ('<span class="pill">' ~ project.licence.edition ~ '</span>')|safe) }}</div>
+<div class="rg">{{ ri('/project', 'Project settings', 'settings', active in ('project', 'account')) }}</div>
+<span class="grow"></span>
+<button class="rbtn js-only" type="button" id="nav-btn" title="Shrink / expand the sidebar ( Ctrl B )" aria-label="Shrink or expand the sidebar">{{ icon("sidebar", 16) }}<span class="nl">Collapse</span></button>
 </div>
-<a href="/model" class="{{ 'on' if active == 'model' }}">{{ icon("layers") }}Plant model · ISA-95</a>
-<a href="/tools" class="{{ 'on' if active == 'tools' }}">{{ icon("wrench") }}Tools<span class="cnt">{{ summary.tools }}</span></a>
-<a href="/profiles" class="{{ 'on' if active.startswith('profile') }}">{{ icon("list") }}Tool profiles<span class="cnt">{{ project.profiles|length }}</span></a>
-<div class="sub">{% for x in project.profiles %}<a class="mono {{ 'on' if active == 'profile:' ~ x.id }}" href="/profiles?p={{ x.id }}">{{ x.id }} · {{ project.endpoint.path }}/{{ x.id }}</a>{% endfor %}</div>
-<a href="/endpoint" class="{{ 'on' if active == 'endpoint' }}">{{ icon("arrow-left-right") }}MCP endpoint<span class="cnt">:{{ project.endpoint.port }}</span></a>
-<a href="/safety" class="{{ 'on' if active == 'safety' }}">{{ icon("shield") }}Safety &amp; limits</a>
-<a href="/audit" class="{{ 'on' if active == 'audit' }}">{{ icon("file-text") }}Audit log</a>
-<hr>
-{% if can_admin %}<a href="/users" class="{{ 'on' if active == 'users' }}">{{ icon("users") }}Users &amp; roles</a>{% endif %}
-<a href="/licence" class="{{ 'on' if active == 'licence' }}">{{ icon("key-round") }}Licence<span class="cnt">{{ project.licence.edition }}</span></a>
+<div class="smenu" aria-label="Section menu">
+{% if sec == 'overview' %}
+<div class="sm-title"><span>Overview</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Overview</div>{{ mi('/', 'Dashboard', here == '/') }}{% if alarms %}{{ mi('/#alarms', 'Alarms', false, alarms|length) }}{% endif %}</div>
+<div class="sm-grp"><div class="sm-g">Clients</div>{{ mi('/#clients', 'Connected clients', false, summary.clients) }}</div>
+<div class="sm-grp"><div class="sm-g">Plant</div>{{ mi('/model', 'Plant model · ISA-95', active == 'model') }}</div>
+{% elif sec == 'sources' %}
+{% set cur_src = nav_sources|selectattr('id', 'equalto', active[7:])|first if active.startswith('source:') else None %}
+<div class="sm-title"><span>Sources</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Sources <span class="cnt">{{ online }}/{{ n_sources }} online</span></div>
+{% for s in nav_sources %}<a href="/sources/{{ s.id }}" class="{{ 'on' if active == 'source:' ~ s.id }}" title="{{ s.type }} · {{ s.name }} - {{ s.msg or s.state }}"><span class="nl">{{ s.name }}</span><span class="dot {{ s.token }}"></span></a>{% endfor %}
+{% if can_edit %}<a href="/sources/new" class="add" data-drawer="/drawer/source/new"><span class="nl">+ Add source</span></a>{% endif %}</div>
+{% if cur_src and step is defined %}<div class="sm-grp"><div class="sm-g">Setup</div>
+{% for st in STEPS %}<a href="{{ request.url.path }}?step={{ loop.index0 }}" class="{{ 'on' if loop.index0 == step }}"><span class="nl">{{ st }}</span>{% if done is defined and loop.index0 in done %}<span class="ok tick">✓</span>{% endif %}</a>{% endfor %}</div>
+{% set objs = cur_src.cfg.objects %}{% if objs %}<div class="sm-grp"><div class="sm-g">Discovered</div>
+{{ mi(request.url.path ~ '?step=1', 'Tables / views', step == 1, objs|length) }}{{ mi('/safety#allow', 'Personal-data columns', false, objs|map(attribute='columns')|sum(start=[])|selectattr('pii')|list|length) }}</div>{% endif %}{% endif %}
+<div class="sm-grp"><div class="sm-g">Model</div>{{ mi('/model', 'Plant model · ISA-95', active == 'model') }}</div>
+{% elif sec == 'tools' %}
+{% set n_pub = project.tools|selectattr('state', 'equalto', 'published')|list|length %}{% set n_held = pub_list|rejectattr('ok')|list|length %}
+{% set tsrc = (project.sources|selectattr('objects')|first) %}
+<div class="sm-title"><span>Tools</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Tools</div>{{ mi('/tools', 'All tools', here == '/tools', project.tools|length) }}</div>
+<div class="sm-grp"><div class="sm-g">State</div>{{ mi('/tools?state=published', 'Published', 'state=published' in here, n_pub) }}{{ mi('/tools?state=draft', 'Drafts / changed', 'state=draft' in here, project.tools|length - n_pub) }}{{ mi('/tools?state=held', 'Held back', 'state=held' in here, n_held) }}</div>
+<div class="sm-grp"><div class="sm-g">Kind</div>{{ mi('/tools?kind=curated', 'Curated', 'kind=curated' in here) }}{{ mi('/tools?kind=generic', 'Generic (ISA-95)', 'kind=generic' in here) }}</div>
+{% if tsrc %}<div class="sm-grp"><div class="sm-g">Templates</div>{{ mi('/sources/' ~ tsrc.id ~ '?step=2', 'Start from a template', false, None, 'new') }}</div>{% endif %}
+{% elif sec == 'connect' %}
+<div class="sm-title"><span>Connect</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Profiles</div>
+{% for x in project.profiles %}<a href="/profiles?p={{ x.id }}" class="{{ 'on' if active == 'profile:' ~ x.id and 'platform=' not in here }}" title="{{ x.title }}"><span class="nl">{{ x.title or x.id }}</span><span class="cnt mono">/{{ x.id }}</span></a>{% endfor %}
+{% if can_edit %}<a href="/profiles" class="add" data-drawer="/drawer/profile/new"><span class="nl">+ New profile</span></a>{% endif %}</div>
+<div class="sm-grp"><div class="sm-g">Endpoint</div>{{ mi('/endpoint', 'MCP endpoint', active == 'endpoint', ':' ~ project.endpoint.port) }}{{ mi('/endpoint#keys', 'API keys', false, project.auth.api_keys|length) }}</div>
+{% set pfirst = project.profiles[0].id if project.profiles else '' %}
+<div class="sm-grp"><div class="sm-g">Clients</div>{% for pl in ('Copilot Studio', 'ContextForge', 'Docker MCP Gateway', 'Claude Desktop') %}{{ mi('/profiles?p=' ~ (active[8:] if active.startswith('profile:') else pfirst) ~ '&platform=' ~ pl|urlencode, pl, ('platform=' ~ pl|urlencode) in here) }}{% endfor %}</div>
+{% elif sec == 'safety' %}
+<div class="sm-title"><span>Safety &amp; limits</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Rules</div>{{ mi('/safety#limits', 'Limits') }}{{ mi('/safety#risk', 'Risk classes') }}</div>
+<div class="sm-grp"><div class="sm-g">Data</div>{{ mi('/safety#allow', 'Allow-list') }}{{ mi('/safety#allow', 'Personal data') }}</div>
+<div class="sm-grp"><div class="sm-g">Checks</div>{{ mi('/tools?state=held', 'Publish checks', false, pub_list|rejectattr('ok')|list|length) }}</div>
+{% elif sec == 'audit' %}
+<div class="sm-title"><span>Audit log</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Records</div>{{ mi('/audit', 'MCP calls', here == '/audit' or 'kind=calls' in here) }}{{ mi('/audit?kind=admin', 'Console changes', 'kind=admin' in here and 'q=login' not in here) }}{{ mi('/audit?kind=admin&q=login', 'Sign-ins', 'q=login' in here) }}</div>
+<div class="sm-grp"><div class="sm-g">Result</div>{{ mi('/audit?result=blocked', 'Blocked', 'result=blocked' in here) }}{{ mi('/audit?result=error', 'Errors', 'result=error' in here) }}</div>
+<div class="sm-grp"><div class="sm-g">Chain</div><form method="post" action="/audit/verify">{{ csrf_field() }}<button class="smbtn" type="submit"><span class="nl">Verify chain</span></button></form>{% if can_edit %}{{ mi('/audit/export.csv', 'Export CSV') }}{% endif %}</div>
+{% else %}
+<div class="sm-title"><span>Settings</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-grp"><div class="sm-g">Project</div>{{ mi('/project', 'General', active == 'project') }}{{ mi('/licence', 'Licence', active == 'licence', project.licence.edition) }}</div>
+<div class="sm-grp"><div class="sm-g">Access</div>{% if can_admin %}{{ mi('/users', 'Users & roles', active == 'users') }}{% endif %}{{ mi('/endpoint#keys', 'API keys', false, project.auth.api_keys|length) }}</div>
+<div class="sm-grp"><div class="sm-g">You</div>{{ mi('/account', 'Account & password', active == 'account') }}</div>
+{% endif %}
+</div>
 </nav>
 <main>
 {% if flash %}<div class="panel banner secret" role="status"><span><b>Shown once - copy it now.</b> Only a hash is stored.<br><code id="flash-secret">{{ flash.split(': ', 1)[-1] }}</code> <span class="muted small">{{ flash.split(': ', 1)[0] }}</span></span><button class="btn" type="button" data-copy="flash-secret">{{ icon("copy") }}Copy</button></div>{% endif %}
-{% if ok %}<div class="panel banner ok" role="status"><span>{{ ok }}</span></div>{% endif %}
-{% if err %}<div class="panel banner bad" role="alert"><span>{{ err }}</span></div>{% endif %}
+{% if ok %}<div class="toast" role="status" data-toast>{{ icon("check") }}<span>{{ ok }}</span><button class="btn ghost close" type="button" aria-label="Close" data-close>{{ icon("x") }}</button></div>{% endif %}
+{% if err %}<div class="panel banner bad" role="alert"><span>{{ err }}</span><button class="btn ghost close" type="button" aria-label="Close" data-close>{{ icon("x") }}</button></div>{% endif %}
 {% block content %}{% endblock %}
 </main>
-{% block side %}{% endblock %}
+{{ side_html }}{% if false %}{% block side %}{% endblock %}{% endif %}
 </div>
 <footer class="foot">
 <span class="{{ 'ok' if server.running else 'warn' }}">MCP server {{ 'ready' if server.running else 'stopped' }} · {{ online }}/{{ n_sources }} sources · {{ summary.tools }} tools · {{ project.profiles|length }} profiles · read-only</span>
