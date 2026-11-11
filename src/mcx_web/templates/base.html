@@ -29,7 +29,7 @@
 {% if ready %}<div class="mf"><button class="btn sm primary">{{ icon("upload", 14) }}Publish {{ ready|length }}</button></div>{% endif %}</form>
 {% else %}<div class="mh"><b>Everything is live</b><span class="muted small">edit a tool and it shows up here</span></div>{% endif %}</div></details>{% endif %}
 {% if alarms %}<a class="btn ghost xs" href="/#alarms" title="Alarms">{{ icon("bell", 15) }}{{ alarms|length }}</a>{% endif %}
-{% if side_html %}<button class="btn ghost xs" id="side-btn" type="button" aria-controls="side" aria-expanded="true" title="Show / hide the right panel ( ] )">{{ icon("panel-right", 15) }}<span class="sr">Right panel</span></button>{% endif %}
+{% if side_html %}<button class="btn ghost xs" id="side-btn" type="button" aria-controls="side" aria-expanded="true" title="Hide details panel ( ] )">{{ icon("panel-right", 15) }}<span class="sr">Right panel</span></button>{% endif %}
 <details class="menu" data-menu><summary class="avatar" title="{{ user.username }} · {{ user.role_text }}">{{ ((user.name or user.username)[:1] ~ ((user.name or '').split(' ')[1][:1] if (user.name or '').split(' ')|length > 1 else ''))|upper }}</summary>
 <div class="menu-pop"><div class="mh"><b>{{ user.name or user.username }}</b><span class="muted small">{{ user.username }} · {{ user.role_text }}</span></div>
 <a href="/account">{{ icon("user") }}Account &amp; password</a>{% if can_admin %}<a href="/users">{{ icon("users") }}Users &amp; roles</a>{% endif %}
@@ -49,7 +49,7 @@
 {% set first_src = '/sources/' ~ nav_sources[0].id if nav_sources else ('/sources/new' if can_edit else '/') %}
 {% macro ri(href, label, ic, on, extra='') %}<a href="{{ href }}" class="{{ 'on' if on }}" title="{{ label }}" aria-label="{{ label }}">{{ icon(ic) }}<span class="nl">{{ label }}</span>{{ extra }}</a>{% endmacro %}
 {% macro mi(href, label, on=false, cnt=None, badge=None, attrs='') %}<a href="{{ href }}" class="{{ 'on' if on }}" {{ attrs }}><span class="nl">{{ label }}</span>{% if badge %}<span class="new">{{ badge }}</span>{% endif %}{% if cnt is not none %}<span class="cnt">{{ cnt }}</span>{% endif %}</a>{% endmacro %}
-<nav class="nav" aria-label="Adapter">
+<nav class="nav {{ 'no-menu' if sec == 'overview' }}" aria-label="Adapter">
 <div class="rail" aria-label="Sections">
 <div class="rg">{{ ri('/', 'Overview', 'house', sec == 'overview') }}
 {{ ri(first_src, 'Sources', 'plug', sec == 'sources', ('<span class="ndot" title="a source is offline"></span>'|safe if off else '') ~ ('<span class="cnt">' ~ online ~ '/' ~ n_sources ~ '</span>')|safe) }}
@@ -62,17 +62,12 @@
 {{ ri('/licence', 'Licence', 'key-round', active == 'licence', ('<span class="pill">' ~ project.licence.edition ~ '</span>')|safe) }}</div>
 <div class="rg">{{ ri('/project', 'Project settings', 'settings', active in ('project', 'account')) }}</div>
 <span class="grow"></span>
-<button class="rbtn js-only" type="button" id="nav-btn" title="Shrink / expand the sidebar ( Ctrl B )" aria-label="Shrink or expand the sidebar">{{ icon("sidebar", 16) }}<span class="nl">Collapse</span></button>
+<button class="rbtn js-only" type="button" id="nav-btn" title="Shrink the sidebar to icons / show its labels ( Ctrl B )" aria-label="Shrink or expand the sidebar">{{ icon("sidebar", 16) }}<span class="nl">Collapse</span></button>
 </div>
-<div class="smenu" aria-label="Section menu">
-{% if sec == 'overview' %}
-<div class="sm-title"><span>Overview</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
-<div class="sm-grp"><div class="sm-g">Overview</div>{{ mi('/', 'Dashboard', here == '/') }}{% if alarms %}{{ mi('/#alarms', 'Alarms', false, alarms|length) }}{% endif %}</div>
-<div class="sm-grp"><div class="sm-g">Clients</div>{{ mi('/#clients', 'Connected clients', false, summary.clients) }}</div>
-<div class="sm-grp"><div class="sm-g">Plant</div>{{ mi('/model', 'Plant model · ISA-95', active == 'model') }}</div>
-{% elif sec == 'sources' %}
+{% if sec != 'overview' %}<div class="smenu" aria-label="Section menu">
+{% if sec == 'sources' %}
 {% set cur_src = nav_sources|selectattr('id', 'equalto', active[7:])|first if active.startswith('source:') else None %}
-<div class="sm-title"><span>Sources</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Sources</span></div>
 <div class="sm-grp"><div class="sm-g">Sources <span class="cnt">{{ online }}/{{ n_sources }} online</span></div>
 {% for s in nav_sources %}<a href="/sources/{{ s.id }}" class="{{ 'on' if active == 'source:' ~ s.id }}" title="{{ s.type }} · {{ s.name }} - {{ s.msg or s.state }}"><span class="nl">{{ s.name }}</span><span class="dot {{ s.token }}"></span></a>{% endfor %}
 {% if can_edit %}<a href="/sources/new" class="add" data-drawer="/drawer/source/new"><span class="nl">+ Add source</span></a>{% endif %}</div>
@@ -84,13 +79,13 @@
 {% elif sec == 'tools' %}
 {% set n_pub = project.tools|selectattr('state', 'equalto', 'published')|list|length %}{% set n_held = pub_list|rejectattr('ok')|list|length %}
 {% set tsrc = (project.sources|selectattr('objects')|first) %}
-<div class="sm-title"><span>Tools</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Tools</span></div>
 <div class="sm-grp"><div class="sm-g">Tools</div>{{ mi('/tools', 'All tools', here == '/tools', project.tools|length) }}</div>
 <div class="sm-grp"><div class="sm-g">State</div>{{ mi('/tools?state=published', 'Published', 'state=published' in here, n_pub) }}{{ mi('/tools?state=draft', 'Drafts / changed', 'state=draft' in here, project.tools|length - n_pub) }}{{ mi('/tools?state=held', 'Held back', 'state=held' in here, n_held) }}</div>
 <div class="sm-grp"><div class="sm-g">Kind</div>{{ mi('/tools?kind=curated', 'Curated', 'kind=curated' in here) }}{{ mi('/tools?kind=generic', 'Generic (ISA-95)', 'kind=generic' in here) }}</div>
 {% if tsrc %}<div class="sm-grp"><div class="sm-g">Templates</div>{{ mi('/sources/' ~ tsrc.id ~ '?step=2', 'Start from a template', false, None, 'new') }}</div>{% endif %}
 {% elif sec == 'connect' %}
-<div class="sm-title"><span>Connect</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Connect</span></div>
 <div class="sm-grp"><div class="sm-g">Profiles</div>
 {% for x in project.profiles %}<a href="/profiles?p={{ x.id }}" class="{{ 'on' if active == 'profile:' ~ x.id and 'platform=' not in here }}" title="{{ x.title }}"><span class="nl">{{ x.title or x.id }}</span><span class="cnt mono">/{{ x.id }}</span></a>{% endfor %}
 {% if can_edit %}<a href="/profiles" class="add" data-drawer="/drawer/profile/new"><span class="nl">+ New profile</span></a>{% endif %}</div>
@@ -98,22 +93,22 @@
 {% set pfirst = project.profiles[0].id if project.profiles else '' %}
 <div class="sm-grp"><div class="sm-g">Clients</div>{% for pl in ('Copilot Studio', 'ContextForge', 'Docker MCP Gateway', 'Claude Desktop') %}{{ mi('/profiles?p=' ~ (active[8:] if active.startswith('profile:') else pfirst) ~ '&platform=' ~ pl|urlencode, pl, ('platform=' ~ pl|urlencode) in here) }}{% endfor %}</div>
 {% elif sec == 'safety' %}
-<div class="sm-title"><span>Safety &amp; limits</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Safety &amp; limits</span></div>
 <div class="sm-grp"><div class="sm-g">Rules</div>{{ mi('/safety#limits', 'Limits') }}{{ mi('/safety#risk', 'Risk classes') }}</div>
 <div class="sm-grp"><div class="sm-g">Data</div>{{ mi('/safety#allow', 'Allow-list') }}{{ mi('/safety#allow', 'Personal data') }}</div>
 <div class="sm-grp"><div class="sm-g">Checks</div>{{ mi('/tools?state=held', 'Publish checks', false, pub_list|rejectattr('ok')|list|length) }}</div>
 {% elif sec == 'audit' %}
-<div class="sm-title"><span>Audit log</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Audit log</span></div>
 <div class="sm-grp"><div class="sm-g">Records</div>{{ mi('/audit', 'MCP calls', here == '/audit' or 'kind=calls' in here) }}{{ mi('/audit?kind=admin', 'Console changes', 'kind=admin' in here and 'q=login' not in here) }}{{ mi('/audit?kind=admin&q=login', 'Sign-ins', 'q=login' in here) }}</div>
 <div class="sm-grp"><div class="sm-g">Result</div>{{ mi('/audit?result=blocked', 'Blocked', 'result=blocked' in here) }}{{ mi('/audit?result=error', 'Errors', 'result=error' in here) }}</div>
 <div class="sm-grp"><div class="sm-g">Chain</div><form method="post" action="/audit/verify">{{ csrf_field() }}<button class="smbtn" type="submit"><span class="nl">Verify chain</span></button></form>{% if can_edit %}{{ mi('/audit/export.csv', 'Export CSV') }}{% endif %}</div>
 {% else %}
-<div class="sm-title"><span>Settings</span><button class="sm-hide js-only" type="button" data-menu-hide title="Hide this menu" aria-label="Hide this menu">{{ icon("chevron-left", 15) }}</button></div>
+<div class="sm-title"><span>Settings</span></div>
 <div class="sm-grp"><div class="sm-g">Project</div>{{ mi('/project', 'General', active == 'project') }}{{ mi('/licence', 'Licence', active == 'licence', project.licence.edition) }}</div>
 <div class="sm-grp"><div class="sm-g">Access</div>{% if can_admin %}{{ mi('/users', 'Users & roles', active == 'users') }}{% endif %}{{ mi('/endpoint#keys', 'API keys', false, project.auth.api_keys|length) }}</div>
 <div class="sm-grp"><div class="sm-g">You</div>{{ mi('/account', 'Account & password', active == 'account') }}</div>
 {% endif %}
-</div>
+</div>{% endif %}
 </nav>
 <main>
 {% if flash %}<div class="panel banner secret" role="status"><span><b>Shown once - copy it now.</b> Only a hash is stored.<br><code id="flash-secret">{{ flash.split(': ', 1)[-1] }}</code> <span class="muted small">{{ flash.split(': ', 1)[0] }}</span></span><button class="btn" type="button" data-copy="flash-secret">{{ icon("copy") }}Copy</button></div>{% endif %}

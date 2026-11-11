@@ -157,7 +157,10 @@ def test_project_settings(web):
     con, client = web
     csrf = setup_admin(con, client)
     html = client.get("/").text
-    assert 'class="crumbs"' in html and con.project.name in html and 'class="rail"' in html and 'class="smenu"' in html
+    assert 'class="crumbs"' in html and con.project.name in html and 'class="rail"' in html
+    assert 'class="smenu"' not in html                          # Overview: no section menu
+    tools = client.get("/tools").text
+    assert 'class="smenu"' in tools and "sm-hide" not in tools  # other sections: menu, without a hide button
     r = client.post("/project", data={"csrf": csrf, "name": "Plant adapter", "site": "Bangkok/",
                                       "timezone": "Asia/Bangkok", "description": "x"})
     assert r.status_code == 303 and "ok=" in r.headers["location"]

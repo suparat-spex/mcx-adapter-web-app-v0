@@ -20,16 +20,13 @@
   // right panel: width and open / closed are applied here, in <head>, BEFORE the page is drawn - so a page
   // never shows the default width or an open panel first and then slides to the saved state
   var OVERLAY = "(min-width:901px) and (max-width:1100px)", STACK = "(max-width:900px)";
-  // left: main sidebar + section menu. full = labels + menu, icons = icons + menu, min = icons only.
+  // left: the main sidebar shows labels ("full") or icons only ("icons"); the section menu always stays.
   // Default: labels from 1600 px, icons below (notebooks). The user's choice wins.
   var navMode = stored("mcx-nav-mode") || (window.innerWidth >= 1600 ? "full" : "icons");
-  if (!mq(STACK)) {
-    if (navMode !== "full") root.classList.add("nav-icons");
-    if (navMode === "min") root.classList.add("nav-nomenu");
-  }
+  if (!mq(STACK) && navMode !== "full") root.classList.add("nav-icons");
   function navWidth() {
     if (mq(STACK)) return 0;
-    return (root.classList.contains("nav-icons") ? 52 : 200) + (root.classList.contains("nav-nomenu") ? 0 : (window.innerWidth <= 1280 ? 220 : 240));
+    return (root.classList.contains("nav-icons") ? 52 : 200) + (window.innerWidth <= 1280 ? 220 : 240);
   }
   function sideDefault() { return window.innerWidth <= 1366 ? 300 : 340; }
   function sideClamp(w) {
@@ -65,10 +62,7 @@
     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
   var ICON = {
     warn: SVG + '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
-    ask: SVG + '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>',
-    hide: SVG + '<path d="m9 18 6-6-6-6"/></svg>',
-    show: SVG + '<path d="m15 18-6-6 6-6"/></svg>',
-    panel: SVG + '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg>'
+    ask: SVG + '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>'
   };
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -278,24 +272,15 @@
     }
     function setClosed(c, save) {
       root.classList.toggle("side-closed", c);
-      if (sideBtn) sideBtn.setAttribute("aria-expanded", c ? "false" : "true");
+      if (sideBtn) {
+        sideBtn.setAttribute("aria-expanded", c ? "false" : "true");
+        sideBtn.classList.toggle("on", !c);
+        sideBtn.title = (c ? "Show" : "Hide") + " details panel ( ] )";
+      }
       if (save && !overlayMq.matches) store("mcx-side-closed", c ? "1" : "0");
     }
     if (side && body) {
-      // rail shown when collapsed
-      var rail = document.createElement("div"); rail.className = "side-rail";
-      rail.innerHTML = '<button class="btn ghost" type="button" title="Show panel ( ] )" aria-label="Show panel">' + ICON.show + "</button>" +
-        '<button class="btn ghost" type="button" title="Show panel ( ] )" aria-label="Show panel" tabindex="-1">' + ICON.panel + "</button>";
-      rail.addEventListener("click", function (e) { if (e.target.closest("button")) setClosed(false, true); });
-      side.appendChild(rail);
-      // hide button in every panel header
-      side.querySelectorAll(".sh").forEach(function (sh) {
-        var x = document.createElement("button");
-        x.className = "btn ghost close side-x"; x.type = "button"; x.title = "Hide panel ( ] )"; x.setAttribute("aria-label", "Hide panel");
-        x.innerHTML = ICON.hide;
-        x.addEventListener("click", function () { setClosed(true, true); });
-        sh.appendChild(x);
-      });
+      // no strip and no button on the panel itself: the top-bar button and ] are the only toggles
       // splitter
       splitter = document.createElement("div");
       splitter.className = "splitter"; splitter.tabIndex = 0;
@@ -540,23 +525,21 @@
 
     // ------------------------------------------------------------ sidebar: expanded / collapsed (Ctrl B)
     var navBtn = document.getElementById("nav-btn");
-    function navNow() { return root.classList.contains("nav-nomenu") ? "min" : root.classList.contains("nav-icons") ? "icons" : "full"; }
+    function navNow() { return root.classList.contains("nav-icons") ? "icons" : "full"; }
     function setNav(m, save) {
       root.classList.toggle("nav-icons", m !== "full");
-      root.classList.toggle("nav-nomenu", m === "min");
       if (save !== false) store("mcx-nav-mode", m);
       if (navBtn) {
         navBtn.setAttribute("aria-expanded", m === "full" ? "true" : "false");
         var l = navBtn.querySelector(".nl"); if (l) l.textContent = m === "full" ? "Collapse" : "Expand";
-        navBtn.title = m === "full" ? "Shrink the sidebar to icons ( Ctrl B )" : "Show labels and the menu ( Ctrl B )";
+        navBtn.title = (m === "full" ? "Shrink the sidebar to icons" : "Show the sidebar labels") + " ( Ctrl B )";
       }
       if (side) setW(chosen, false);                       // the page got wider / narrower: re-fit the right panel
     }
     if (navBtn) { setNav(navNow(), false); navBtn.addEventListener("click", function () { setNav(navNow() === "full" ? "icons" : "full"); }); }
-    document.addEventListener("click", function (e) { if (e.target.closest("[data-menu-hide]")) setNav("min"); });
-    document.addEventListener("keydown", function (e) {      // Ctrl B: labels -> icons -> icons without menu -> labels
+    document.addEventListener("keydown", function (e) {      // Ctrl B: labels <-> icons (the section menu stays)
       if ((e.key === "b" || e.key === "B") && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
-        e.preventDefault(); setNav({ full: "icons", icons: "min", min: "full" }[navNow()]);
+        e.preventDefault(); setNav(navNow() === "full" ? "icons" : "full");
       }
     });
 

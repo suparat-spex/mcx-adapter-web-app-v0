@@ -549,3 +549,21 @@ input:focus,select:focus,textarea:focus,.btn:focus-visible,.nav a:focus-visible,
 main{container-type:inline-size}
 @container (max-width:860px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .fsearch{flex:1 1 150px}.filterbar{flex-wrap:nowrap}.filterbar select{flex:0 1 auto;min-width:0}@container (max-width:620px){.filterbar{flex-wrap:wrap}}
+
+/* ===== clean-up: neutral selection, inset dividers, panel toggled only from the top bar ===== */
+:root{--divider:#ececec}
+:root[data-theme="dark"]{--divider:#333333}
+/* 1. main sidebar: no orange when selected */
+.nav .rail a:hover,.nav .rail .rbtn:hover{background:var(--panel2);color:var(--text)}
+.nav .rail a.on,.nav .rail a.on:hover{background:var(--hover);color:var(--text);font-weight:600}
+.nav .rail a.on .ic,.nav .rail a:hover .ic{color:var(--text)}
+/* 2. inset light-grey dividers between groups */
+.nav .rail .rg{position:relative;border-bottom:0}
+.nav .rail .rg:not(:last-of-type)::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:1px;background:var(--divider)}
+.nav-icons .nav .rail .rg:not(:last-of-type)::after{left:12px;right:12px}
+/* 3. right panel: hidden = gone (no strip, no button on it); the top-bar button shows its state */
+.side-closed .body>aside.side{display:none}
+.side .sh{padding-right:14px!important}
+#side-btn.on{background:var(--hover);color:var(--text)}
+/* 4. Overview: no section menu */
+.nav.no-menu{--nav-w:var(--main-w)}
